@@ -66,6 +66,7 @@ def fetch_matches(
             "season": str(season),
             "sort": "newest",
             "count": "100",
+            "excludedecay": "true",
         }
         if after_id:
             params["after"] = str(after_id)
