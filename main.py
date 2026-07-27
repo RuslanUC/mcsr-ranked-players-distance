@@ -29,18 +29,6 @@ class MatchType(IntEnum):
 class UserProfile(BaseModel):
     uuid: UUID
     nickname: str
-    roleType: int
-    eloRate: int | None
-    eloRank: int | None
-    country: str | None
-
-
-class MatchSeed(BaseModel):
-    id: str | None
-    overworld: str | None
-    nether: str | None
-    endTowers: list[int]
-    variations: list[str]
 
 
 class MatchResult(BaseModel):
@@ -48,51 +36,17 @@ class MatchResult(BaseModel):
     time: int
 
 
-class MatchRank(BaseModel):
-    season: int | None
-    allTime: int | None
-
-
-class MatchChange(BaseModel):
-    uuid: UUID
-    change: int | None
-    eloRate: int | None
-
-
-class MatchVod(BaseModel):
-    uuid: UUID
-    url: str
-    startsAt: int
-
-
-class MatchCompletion(BaseModel):
-    uuid: UUID
-    time: int
-
-
-class MatchTimeline(BaseModel):
-    uuid: UUID
-    time: int
-    type: str
-
-
 class MatchInfo(BaseModel):
     id: int
     type: MatchType
     season: int
-    category: str | None
     date: datetime
     players: list[UserProfile]
-    spectators: list[UserProfile]
-    seed: MatchSeed | None
     result: MatchResult
     forfeited: bool
     decayed: bool
-    rank: MatchRank
-    changes: list[MatchChange]
     tag: str | None
     beginner: bool
-    vod: list[MatchVod]
 
 
 class Matches(RootModel):
