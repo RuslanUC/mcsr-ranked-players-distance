@@ -15,6 +15,7 @@ RANKED_HOST = "https://mcsrranked.com/api"  # 30 seconds cache
 PLAYER1 = "feinberg"
 PLAYER2 = "fatchudlolcow"
 JUST_CHECK = False
+SKIP_FETCHING_EXISTING = True
 FROM_SEASON = 9
 TO_SEASON = 11
 
@@ -111,6 +112,8 @@ def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
     min_match_id, max_match_id = cur.fetchone()
 
     if min_match_id and max_match_id:
+        if SKIP_FETCHING_EXISTING:
+            return
         fetch_matches(db, player, season, max_match_id, None)
         fetch_matches(db, player, season, None, min_match_id)
     else:
