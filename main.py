@@ -118,36 +118,21 @@ def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
 
 
 def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
-    cur = db.execute(
-        """
-        WITH RECURSIVE Splitter AS (
-            SELECT
-                SUBSTR(players, 1, INSTR(players, '|') - 1) AS nickname,
-                SUBSTR(players, INSTR(players, '|') + 1) AS remainder
-            FROM
-                match
-            WHERE 
-                players like ?
-            UNION ALL
-            SELECT
-                SUBSTR(remainder, 1, INSTR(remainder, '|') - 1) AS nickname,
-                SUBSTR(remainder, INSTR(remainder, '|') + 1) AS remainder
-            FROM
-                Splitter
-            WHERE
-                remainder != ''
-        )
-        SELECT
-            DISTINCT(nickname)
-        FROM
-            Splitter
-        WHERE nickname != '';
-        """,
-        [f"%|{player}|%"],
-    )
+    result = set()
+    if JUST_CHECK and False:
+        sep = " "
+        cur = db.execute("SELECT `players` FROM `match_fts` WHERE `players` MATCH ?;", [f"\"{player}\""])
+    else:
+        sep = "|"
+        cur = db.execute("SELECT `players` FROM `match` WHERE `players` LIKE ?;", [f"%|{player}|%"])
 
-    return {row[0] for row in cur.fetchall()}
+    for players_separated, in cur:
+        for nickname in players_separated.split(sep):
+            if not nickname:
+                continue
+            result.add(nickname)
 
+    return result
 
 def try_players(db: sqlite3.Connection, player1: str, player2: str) -> tuple[str, ...] | None:
     for season in range(FROM_SEASON, TO_SEASON + 1):
@@ -191,8 +176,13 @@ def main() -> None:
         `date` DATETIME NOT NULL
     );
     CREATE INDEX IF NOT EXISTS `idx_match_players` ON `match`(`players`);
+    DROP TABLE IF EXISTS `match_fts`;
     COMMIT;
     """)
+
+    if JUST_CHECK and False:
+        db.execute("CREATE VIRTUAL TABLE `match_fts` USING fts5(`players`);")
+        db.execute("INSERT INTO `match_fts` (`players`) SELECT REPLACE(`players`, '|', ' ') FROM `match`;")
 
     result = try_players(db, PLAYER1, PLAYER2)
     if result is None:
