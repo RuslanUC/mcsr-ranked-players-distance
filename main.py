@@ -99,7 +99,9 @@ class Matches(RootModel):
     root: list[MatchInfo]
 
 
-def fetch_matches(db: sqlite3.Connection, player: str, season: int, after_id: int | None, before_id: int | None) -> None:
+def fetch_matches(
+        db: sqlite3.Connection, player: str, season: int, after_id: int | None, before_id: int | None,
+) -> None:
     if JUST_CHECK:
         return
 
@@ -134,14 +136,24 @@ def fetch_matches(db: sqlite3.Connection, player: str, season: int, after_id: in
             players.append("")
             insert_matches.append((match.id, "|".join(players), match.season, match.date))
 
-        cur = db.executemany("INSERT INTO `match` (`id`, `players`, `season`, `date`) VALUES (?, ?, ?, ?);", insert_matches)
+        cur = db.executemany(
+            "INSERT INTO `match` (`id`, `players`, `season`, `date`) VALUES (?, ?, ?, ?);",
+            insert_matches,
+        )
         db.commit()
         print(f"Inserted {cur.rowcount} matches")
 
 
 def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
     cur = db.cursor()
-    cur.execute("SELECT MIN(`id`) min_match_id, MAX(`id`) max_match_id FROM `match` WHERE `players` LIKE ? AND `season` = ?;",[f"%|{player}|%", season])
+    cur.execute(
+        """
+        SELECT MIN(`id`) min_match_id, MAX(`id`) max_match_id
+        FROM `match`
+        WHERE `players` LIKE ? AND `season` = ?;
+        """,
+        [f"%|{player}|%", season],
+    )
     min_match_id, max_match_id = cur.fetchone()
 
     if min_match_id and max_match_id:
@@ -152,30 +164,33 @@ def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
 
 
 def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
-    cur = db.execute("""
-    WITH RECURSIVE Splitter AS (
+    cur = db.execute(
+        """
+        WITH RECURSIVE Splitter AS (
+            SELECT
+                SUBSTR(players, 1, INSTR(players, '|') - 1) AS nickname,
+                SUBSTR(players, INSTR(players, '|') + 1) AS remainder
+            FROM
+                match
+            WHERE 
+                players like ?
+            UNION ALL
+            SELECT
+                SUBSTR(remainder, 1, INSTR(remainder, '|') - 1) AS nickname,
+                SUBSTR(remainder, INSTR(remainder, '|') + 1) AS remainder
+            FROM
+                Splitter
+            WHERE
+                remainder != ''
+        )
         SELECT
-            SUBSTR(players, 1, INSTR(players, '|') - 1) AS nickname,
-            SUBSTR(players, INSTR(players, '|') + 1) AS remainder
-        FROM
-            match
-        WHERE 
-            players like ?
-        UNION ALL
-        SELECT
-            SUBSTR(remainder, 1, INSTR(remainder, '|') - 1) AS nickname,
-            SUBSTR(remainder, INSTR(remainder, '|') + 1) AS remainder
+            DISTINCT(nickname)
         FROM
             Splitter
-        WHERE
-            remainder != ''
+        WHERE nickname != '';
+        """,
+        [f"%|{player}|%"],
     )
-    SELECT
-        DISTINCT(nickname)
-    FROM
-        Splitter
-    WHERE nickname != '';
-    """, [f"%|{player}|%"])
 
     return {row[0] for row in cur.fetchall()}
 
@@ -233,7 +248,16 @@ def main() -> None:
         print(f"FOUND: {'-'.join(result)}")
         print("Matches:")
         for num, (p1, p2) in enumerate(itertools.pairwise(result), start=1):
-            cur = db.execute("SELECT `id`, `season`, `date` FROM `match` WHERE `players` LIKE ? AND `players` LIKE ? ORDER BY `id` DESC LIMIT 1;", [f"%|{p1}|%", f"%|{p2}|%"])
+            cur = db.execute(
+                """
+                SELECT `id`, `season`, `date` 
+                FROM `match` 
+                WHERE `players` LIKE ? AND `players` LIKE ? 
+                ORDER BY `id` DESC 
+                LIMIT 1;
+                """,
+                [f"%|{p1}|%", f"%|{p2}|%"],
+            )
             match_id, match_season, match_date = cur.fetchone()
             print(
                 f" {num}. {p1} vs {p2} in season {match_season}, on {match_date} "
