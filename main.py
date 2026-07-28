@@ -204,7 +204,7 @@ def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
 
     while queue:
         nickname = queue.popleft()
-        print(f"Fetching player {nickname}")
+        print(f"Fetching player {nickname}, queued: {len(queue)}")
 
         for season in range(FROM_SEASON, TO_SEASON + 1):
             fetch_for_player(db, nickname, season)

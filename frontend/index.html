@@ -119,10 +119,16 @@
                         } else {
                             const matches_count_bold = document.createElement("b");
                             matches_count_bold.innerText = String(json.matches.length);
-                            title.append(player1_bold, " is ", matches_count_bold, " ", json.matches.length === 1 ? "match" : "matches", " away from ", player2_bold);
+                            if(json.matches.length === 1)
+                                title.append(player1_bold, " has actually played directly against ", player2_bold, " at some point");
+                            else
+                                title.append(player1_bold, " is ", matches_count_bold, " matches away from ", player2_bold);
 
                             const matches_title = document.createElement("p");
-                            matches_title.innerText = `Here're all the matches:`;
+                            if(json.matches.length === 1)
+                                matches_title.innerText = `Here's that match:`;
+                            else
+                                matches_title.innerText = `Here're all the matches:`;
                             result_container.appendChild(matches_title);
 
                             const matches_list = document.createElement("ul");
