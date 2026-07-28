@@ -23,7 +23,10 @@ def get_players_distance(player1: str, player2: str) -> dict:
 
     path_cache_key = "path", player1, player2
     if (path := cache.get(path_cache_key)) is None:
-        path = graph.get_shortest_path(player1, player2)
+        try:
+            path = graph.get_shortest_path(player1, player2)
+        except ValueError:
+            path = []
         cache[path_cache_key] = path
 
     if rev:
