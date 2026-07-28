@@ -35,12 +35,12 @@ def get_players_distance(player1: str, player2: str) -> dict:
     if not _nickname_is_valid(player2):
         return {"matches": [], "additional_info": "Nickname of second player is invalid"}
 
+    player1 = player1.lower()
+    player2 = player2.lower()
+
     response_cache_key = "full-resp", player1, player2
     if cached_response := cache.get(response_cache_key):
         return cached_response
-
-    player1 = player1.lower()
-    player2 = player2.lower()
 
     info = None
     rev = False
