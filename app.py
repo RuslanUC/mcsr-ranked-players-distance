@@ -1,17 +1,28 @@
+import string
 from itertools import pairwise
 
 from diskcache import Cache
 from flask import Flask
 import igraph as ig
 
+NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
 
 app = Flask("mcsr-player-distance")
 graph = ig.Graph.Read_Picklez("graph.pkl")
 cache = Cache("cache-matches")
 
 
+def _nickname_is_valid(nickname: str) -> bool:
+    if len(nickname) < 2 or len(nickname) > 16:
+        return False
+    return all(ch in NICKNAME_ALLOWED_CHARACTERS for ch in nickname)
+
+
 @app.get("/distance/<string:player1>/<string:player2>")
 def get_players_distance(player1: str, player2: str) -> dict:
+    if not _nickname_is_valid(player1) or not _nickname_is_valid(player2):
+        return {"matches": []}
+
     matches_cache_key = "resp", player1, player2
     if cached_matches := cache.get(("resp", player1, player2)):
         return {"matches": cached_matches}
