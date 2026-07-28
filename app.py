@@ -62,5 +62,10 @@ def get_players_distance(player1: str, player2: str) -> dict:
     }
 
 
+@app.get("/health")
+def healthcheck() -> dict:
+    return {"ok": True}
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8080)

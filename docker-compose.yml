@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    pull_policy: build
+    command: gunicorn app:app --workers 4 --bind 0.0.0.0:8080
+    volumes: ['cache_data:/mcsrpd/cache-matches']
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HOST_PORT}:8080"
+    healthcheck:
+      test: curl --fail http://127.0.0.1:8080/health || exit 1
+      start_period: 10s
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cache_data:
+    driver: local
