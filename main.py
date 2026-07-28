@@ -74,12 +74,20 @@ def fetch_matches(
             params["before"] = str(before_id)
 
         resp = niquests.get(f"{RANKED_HOST}/users/{player}/matches", params=params)
+        if resp.status_code == 404:
+            print(f"Player {player} does not exist, what?")
+            break
         if resp.status_code == 429:
             print("Got error 429, re-trying in 60 seconds...")
             time.sleep(60)
             continue
 
-        matches = Matches(root=resp.json()["data"])
+        resp_j = resp.json()
+        if resp_j["status"] != "success":
+            print(f"Failed to fetch data for player {player!r}: {resp_j['data']['error']}")
+            break
+
+        matches = Matches(root=resp_j["data"])
         if not matches.root:
             break
 
