@@ -171,9 +171,6 @@ def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
     return result
 
 def try_players(db: sqlite3.Connection, player1: str, player2: str) -> tuple[str, ...] | None:
-    for season in range(FROM_SEASON, TO_SEASON + 1):
-        fetch_for_player(db, player2, season)
-
     vs2 = get_vs_nicknames(db, player2)
 
     queue: deque[tuple[str, tuple[str, ...]]] = deque([(player1, (player1,))])

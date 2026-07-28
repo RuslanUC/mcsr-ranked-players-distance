@@ -29,13 +29,17 @@ def _nickname_is_valid(nickname: str) -> bool:
 
 @app.get("/distance/<string:player1>/<string:player2>")
 def get_players_distance(player1: str, player2: str) -> dict:
-    if not _nickname_is_valid(player1) or not _nickname_is_valid(player2):
-        return {"matches": []}
+    if not _nickname_is_valid(player1):
+        return {"matches": [], "additional_info": "Nickname of first player is invalid"}
 
-    matches_cache_key = "resp", player1, player2
-    if cached_matches := cache.get(("resp", player1, player2)):
-        return {"matches": cached_matches}
+    if not _nickname_is_valid(player2):
+        return {"matches": [], "additional_info": "Nickname of second player is invalid"}
 
+    response_cache_key = "full-resp", player1, player2
+    if cached_response := cache.get(response_cache_key):
+        return cached_response
+
+    info = None
     rev = False
     if player2 > player1:
         rev = True
@@ -46,6 +50,13 @@ def get_players_distance(player1: str, player2: str) -> dict:
         try:
             path = graph.get_shortest_path(player1, player2)
         except ValueError:
+            try:
+                graph.vs.find(player1)
+            except ValueError:
+                info = f"Unknown player \"{player1}\". "
+            else:
+                info = f"Unknown player \"{player2}\". "
+            info += "You can find more info here: https://github.com/RuslanUC/mcsr-ranked-players-distance."
             path = []
         cache[path_cache_key] = path
 
@@ -64,11 +75,14 @@ def get_players_distance(player1: str, player2: str) -> dict:
             "player2": p2,
         })
 
-    cache[matches_cache_key] = matches
-
-    return {
+    result = {
         "matches": matches,
+        "additional_info": info,
     }
+
+    cache[response_cache_key] = result
+
+    return result
 
 
 @app.get("/health")
@@ -77,4 +91,4 @@ def healthcheck() -> dict:
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8080)
+    app.run(host="127.0.0.1", port=8888)

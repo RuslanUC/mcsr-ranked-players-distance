@@ -116,34 +116,39 @@
 
                         if(json.matches.length === 0) {
                             title.append("Didn't find any match \"chain\" between ", player1_bold, " and ", player2_bold);
-                            return;
+                        } else {
+                            const matches_count_bold = document.createElement("b");
+                            matches_count_bold.innerText = String(json.matches.length);
+                            title.append(player1_bold, " is ", matches_count_bold, " ", json.matches.length === 1 ? "match" : "matches", " away from ", player2_bold);
+
+                            const matches_title = document.createElement("p");
+                            matches_title.innerText = `Here's all the matches:`;
+                            result_container.appendChild(matches_title);
+
+                            const matches_list = document.createElement("ul");
+                            matches_list.classList = "list-group w-100 fs-5";
+                            result_container.appendChild(matches_list);
+
+                            for (const match of json.matches) {
+                                const match_item = document.createElement("li");
+                                match_item.classList.add("list-group-item");
+                                matches_list.appendChild(match_item);
+
+                                const match_with_url = document.createElement("a");
+                                match_with_url.href = `https://mcsrranked.com/stats/${match.player1}/vs/${match.player2}/${match.id}?season=${match.season}`;
+                                match_with_url.innerText = `${match.player1} vs ${match.player2}`;
+                                match_item.appendChild(match_with_url);
+
+                                const match_season = document.createElement("span");
+                                match_season.innerText = ` (in season ${match.season})`;
+                                match_item.appendChild(match_season);
+                            }
                         }
 
-                        const matches_count_bold = document.createElement("b");
-                        matches_count_bold.innerText = String(json.matches.length);
-                        title.append(player1_bold, " is ", matches_count_bold, " ", json.matches.length === 1 ? "match" : "matches", " away from ", player2_bold);
-
-                        const matches_title = document.createElement("p");
-                        matches_title.innerText = `Here's all the matches:`;
-                        result_container.appendChild(matches_title);
-
-                        const matches_list = document.createElement("ul");
-                        matches_list.classList = "list-group w-100 fs-5";
-                        result_container.appendChild(matches_list);
-
-                        for(const match of json.matches) {
-                            const match_item = document.createElement("li");
-                            match_item.classList.add("list-group-item");
-                            matches_list.appendChild(match_item);
-
-                            const match_with_url = document.createElement("a");
-                            match_with_url.href = `https://mcsrranked.com/stats/${match.player1}/vs/${match.player2}/${match.id}?season=${match.season}`;
-                            match_with_url.innerText = `${match.player1} vs ${match.player2}`;
-                            match_item.appendChild(match_with_url);
-
-                            const match_season = document.createElement("span");
-                            match_season.innerText = ` (in season ${match.season})`;
-                            match_item.appendChild(match_season);
+                        if(json.additional_info) {
+                            const matches_title = document.createElement("p");
+                            matches_title.innerText = json.additional_info;
+                            result_container.appendChild(matches_title);
                         }
                     }, () => {
                         showError("Failed to fetch info: got invalid response from server");
