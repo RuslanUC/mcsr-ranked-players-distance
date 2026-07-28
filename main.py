@@ -139,9 +139,10 @@ def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
         db.execute("INSERT INTO `player` (`nickname`, `season`) VALUES (?, ?);", [player, season])
         fetch_matches(db, player, season, None, None)
     else:
-        if SKIP_FETCHING_EXISTING:
-            return
         min_match_id, max_match_id, season_fetched = row
+        if SKIP_FETCHING_EXISTING or season_fetched:
+            print(f"Skipping fetching season {season} for player {player}")
+            return
         fetch_matches(db, player, season, max_match_id, None)
         fetch_matches(db, player, season, None, min_match_id)
 
