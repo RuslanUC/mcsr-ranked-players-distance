@@ -2,7 +2,7 @@ import string
 from itertools import pairwise
 
 from diskcache import Cache
-from flask import Flask
+from flask import Flask, Response
 import igraph as ig
 
 NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
@@ -10,6 +10,15 @@ NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
 app = Flask("mcsr-player-distance")
 graph = ig.Graph.Read_Picklez("graph.pkl")
 cache = Cache("cache-matches")
+
+
+@app.after_request
+def set_cors_headers(response: Response) -> Response:
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Content-Security-Policy"] = "connect-src *;"
+    return response
 
 
 def _nickname_is_valid(nickname: str) -> bool:
