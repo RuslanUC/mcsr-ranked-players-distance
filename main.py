@@ -16,8 +16,10 @@ PLAYER1 = "feinberg"
 PLAYER2 = "fatchudlolcow"
 JUST_CHECK = False
 SKIP_FETCHING_EXISTING = True
+RUN_BFS_FROM_PLAYER = "feinberg"
 FROM_SEASON = 9
 TO_SEASON = 11
+LAST_SEASON = 11
 
 
 class MatchType(IntEnum):
@@ -101,32 +103,53 @@ def fetch_matches(
             insert_matches.append((match.id, "|".join(players), match.season, match.date))
 
         cur = db.executemany(
-            "INSERT INTO `match` (`id`, `players`, `season`, `date`) VALUES (?, ?, ?, ?);",
+            "INSERT OR IGNORE INTO `match` (`id`, `players`, `season`, `date`) VALUES (?, ?, ?, ?);",
             insert_matches,
         )
-        db.commit()
         print(f"Inserted {cur.rowcount} matches")
+
+        min_id = matches.root[-1].id
+        max_id = matches.root[0].id
+        db.execute(
+            """
+            UPDATE `player` 
+            SET 
+                `min_match_id`=MIN(COALESCE(`min_match_id`, ?), ?),
+                `max_match_id`=MAX(COALESCE(`max_match_id`, 0), ?)
+            WHERE 
+                `nickname` = ? AND `season` =?;
+            """,
+            [min_id, min_id, max_id, player, season],
+        )
+        db.commit()
 
 
 def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
     cur = db.cursor()
     cur.execute(
         """
-        SELECT MIN(`id`) min_match_id, MAX(`id`) max_match_id
-        FROM `match`
-        WHERE `players` LIKE ? AND `season` = ?;
+        SELECT `min_match_id`, `max_match_id`, `season_fetched`
+        FROM `player`
+        WHERE `nickname` = ? AND `season` = ?;
         """,
-        [f"%|{player}|%", season],
+        [player, season],
     )
-    min_match_id, max_match_id = cur.fetchone()
-
-    if min_match_id and max_match_id:
+    row = cur.fetchone()
+    if row is None:
+        db.execute("INSERT INTO `player` (`nickname`, `season`) VALUES (?, ?);", [player, season])
+        fetch_matches(db, player, season, None, None)
+    else:
         if SKIP_FETCHING_EXISTING:
             return
+        min_match_id, max_match_id, season_fetched = row
         fetch_matches(db, player, season, max_match_id, None)
         fetch_matches(db, player, season, None, min_match_id)
-    else:
-        fetch_matches(db, player, season, None, None)
+
+    if season < LAST_SEASON:
+        db.execute(
+            "UPDATE `player` SET `season_fetched` = 1 WHERE `nickname` = ? AND `season` = ?;",
+            [player, season]
+        )
 
 
 def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
@@ -177,10 +200,36 @@ def try_players(db: sqlite3.Connection, player1: str, player2: str) -> tuple[str
     return None
 
 
+def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
+    queue: deque[str] = deque([player])
+    seen = {player}
+
+    while queue:
+        nickname = queue.popleft()
+        print(f"Fetching player {nickname}")
+
+        for season in range(FROM_SEASON, TO_SEASON + 1):
+            fetch_for_player(db, nickname, season)
+
+        for other in get_vs_nicknames(db, nickname):
+            if other in seen:
+                continue
+            seen.add(other)
+            queue.append(other)
+
+
 def main() -> None:
     db = sqlite3.connect("matches.db")
     db.executescript("""
     BEGIN;
+    CREATE TABLE IF NOT EXISTS `player` (
+        `nickname` VARCHAR(32) NOT NULL,
+        `season` INT NOT NULL,
+        `min_match_id` BIGINT DEFAULT NULL,
+        `max_match_id` BIGINT DEFAULT NULL,
+        `season_fetched` BOOL NOT NULL DEFAULT FALSE,
+        PRIMARY KEY (`nickname`, `season`)
+    );
     CREATE TABLE IF NOT EXISTS `match` (
         `id` BIGINT PRIMARY KEY NOT NULL,
         `players` VARCHAR(256) NOT NULL,
@@ -195,6 +244,11 @@ def main() -> None:
     if JUST_CHECK and False:
         db.execute("CREATE VIRTUAL TABLE `match_fts` USING fts5(`players`);")
         db.execute("INSERT INTO `match_fts` (`players`) SELECT REPLACE(`players`, '|', ' ') FROM `match`;")
+
+    if RUN_BFS_FROM_PLAYER is not None:
+        run_bfs_from_player(db, RUN_BFS_FROM_PLAYER)
+        db.close()
+        return
 
     result = try_players(db, PLAYER1, PLAYER2)
     if result is None:
