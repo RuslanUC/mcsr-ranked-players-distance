@@ -1,16 +1,33 @@
 from itertools import pairwise
 
+from diskcache import Cache
 from flask import Flask
 import igraph as ig
 
 
 app = Flask("mcsr-player-distance")
 graph = ig.Graph.Read_Picklez("graph.pkl")
+cache = Cache("cache-matches")
 
 
 @app.get("/distance/<string:player1>/<string:player2>")
 def get_players_distance(player1: str, player2: str) -> dict:
-    path = graph.get_shortest_path(player1, player2)
+    matches_cache_key = "resp", player1, player2
+    if cached_matches := cache.get(("resp", player1, player2)):
+        return {"matches": cached_matches}
+
+    rev = False
+    if player2 > player1:
+        rev = True
+        player1, player2 = player2, player1
+
+    path_cache_key = "path", player1, player2
+    if (path := cache.get(path_cache_key)) is None:
+        path = graph.get_shortest_path(player1, player2)
+        cache[path_cache_key] = path
+
+    if rev:
+        path.reverse()
 
     matches = []
     for v1, v2 in pairwise(path):
@@ -23,6 +40,8 @@ def get_players_distance(player1: str, player2: str) -> dict:
             "player1": p1,
             "player2": p2,
         })
+
+    cache[matches_cache_key] = matches
 
     return {
         "matches": matches,
