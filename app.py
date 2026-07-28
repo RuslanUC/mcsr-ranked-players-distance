@@ -39,6 +39,9 @@ def get_players_distance(player1: str, player2: str) -> dict:
     if cached_response := cache.get(response_cache_key):
         return cached_response
 
+    player1 = player1.lower()
+    player2 = player2.lower()
+
     info = None
     rev = False
     if player2 > player1:
