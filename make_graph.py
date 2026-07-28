@@ -1,6 +1,4 @@
 import sqlite3
-import timeit
-from itertools import pairwise
 
 import igraph as ig
 
@@ -48,24 +46,6 @@ def main() -> None:
     g.add_edges(edges_to_add, attrs_to_add)
 
     del seen_players, edges
-
-    """
-    print("Searching...")
-    print(timeit.timeit(lambda: g.get_shortest_path("feinberg", "fatchudlolcow"), number=100))
-
-    path = g.get_shortest_path("feinberg", "fatchudlolcow")
-    print(path)
-
-    for num, (v1, v2) in enumerate(pairwise(path), start=1):
-        p1 = g.vs[v1]["name"]
-        p2 = g.vs[v2]["name"]
-        eid = g.get_eid(v1, v2)
-        edge = g.es[eid]
-        print(
-            f" {num}. {p1} vs {p2} in season {edge['season']} "
-            f"(match url: https://mcsrranked.com/stats/{p1}/vs/{p2}/{edge['match']}?season={edge['season']})"
-        )
-    """
 
     g.write_picklez("graph.pkl")
 
