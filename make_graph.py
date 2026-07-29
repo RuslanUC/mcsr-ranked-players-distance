@@ -5,7 +5,12 @@ import igraph as ig
 
 def main() -> None:
     db = sqlite3.connect("matches.db")
-    cur = db.execute("SELECT `id`, `players`, `season` FROM `match`;")
+    cur = db.execute("""
+    SELECT mp1.match_id, m.season, mp1.player_nickname, mp2.player_nickname
+    FROM `match_player` mp1
+        INNER JOIN `match_player` mp2 on mp2.match_id = mp1.match_id AND mp1.player_nickname < mp2.player_nickname
+        INNER JOIN `match` m ON mp1.match_id = m.id;
+    """)
     all_players = cur.fetchall()
     db.close()
 
@@ -14,26 +19,15 @@ def main() -> None:
 
     g = ig.Graph()
 
-    for match_id, players_separated, season in all_players:
-        players = list(filter(bool, players_separated.split("|")))
-        if len(players) != 2:
-            continue
-        for player in players:
+    for match_id, season, player1, player2 in all_players:
+        for player in (player1, player2):
             if player not in seen_players:
                 seen_players.add(player)
                 g.add_vertex(player)
-        tup = players[0], players[1]
-        tup_rev = players[1], players[0]
-        if tup in edges:
-            latest_match, _ = edges[tup]
-            if match_id > latest_match:
-                edges[tup] = match_id, season
-        elif tup_rev in edges:
-            latest_match, _ = edges[tup_rev]
-            if match_id > latest_match:
-                edges[tup_rev] = match_id, season
-        else:
-            edges[tup] = match_id, season
+
+        key = player1, player2
+        if key not in edges or match_id > edges[key][0]:
+            edges[key] = match_id, season
 
     edges_to_add = []
     attrs_to_add = {"match": [], "season": []}
@@ -45,7 +39,7 @@ def main() -> None:
 
     g.add_edges(edges_to_add, attrs_to_add)
 
-    del seen_players, edges
+    del edges
 
     g.write_picklez("graph.pkl")
 
