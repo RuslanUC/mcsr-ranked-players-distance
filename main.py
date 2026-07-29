@@ -62,6 +62,11 @@ def fetch_matches(
     if JUST_CHECK:
         return
 
+    insert_matches = []
+    insert_matches_players = []
+    min_id = None
+    max_id = None
+
     while True:
         params = {
             "type": str(MatchType.RANKED.value),
@@ -94,27 +99,26 @@ def fetch_matches(
             break
 
         before_id = matches.root[-1].id
+        min_id = matches.root[-1].id
+        max_id = matches.root[0].id
 
-        insert_matches = []
-        insert_matches_players = []
         for match in matches.root:
             insert_matches.append((match.id, match.season, match.date))
             for match_player in match.players:
                 insert_matches_players.append((match.id, match_player.nickname.lower()))
 
-        cur = db.executemany(
-            "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`) VALUES (?, ?, ?);",
-            insert_matches,
-        )
-        print(f"Inserted {cur.rowcount} matches")
-        cur = db.executemany(
-            "INSERT OR IGNORE INTO `match_player` (`match_id`, `player_nickname`) VALUES (?, ?);",
-            insert_matches_players,
-        )
-        print(f"Inserted {cur.rowcount} matches-players")
+    cur = db.executemany(
+        "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`) VALUES (?, ?, ?);",
+        insert_matches,
+    )
+    matches_cnt = cur.rowcount
+    cur = db.executemany(
+        "INSERT OR IGNORE INTO `match_player` (`match_id`, `player_nickname`) VALUES (?, ?);",
+        insert_matches_players,
+    )
+    print(f"Inserted {matches_cnt} matches and {cur.rowcount} matches-players")
 
-        min_id = matches.root[-1].id
-        max_id = matches.root[0].id
+    if min_id is not None and max_id is not None:
         db.execute(
             """
             UPDATE `player` 
@@ -126,7 +130,7 @@ def fetch_matches(
             """,
             [min_id, min_id, max_id, player, season],
         )
-        db.commit()
+    db.commit()
 
 
 def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
