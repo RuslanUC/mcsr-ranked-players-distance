@@ -49,7 +49,7 @@ def get_players_distance(player1: str, player2: str) -> dict:
     player1 = player1.lower()
     player2 = player2.lower()
 
-    response_cache_key = "full-resp", player1, player2
+    response_cache_key = f"full-resp:{player1}-{player2}".encode("latin1")
     if cached_response := cache.get(response_cache_key):
         return cached_response
 
@@ -59,7 +59,7 @@ def get_players_distance(player1: str, player2: str) -> dict:
         rev = True
         player1, player2 = player2, player1
 
-    path_cache_key = "path", player1, player2
+    path_cache_key = f"path:{player1}-{player2}".encode("latin1")
     if (path := cache.get(path_cache_key)) is None:
         try:
             path = graph.get_shortest_path(player1, player2)
