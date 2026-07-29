@@ -2,3 +2,5 @@
 *.db-*
 *.pkl
 /cache-*
+/matches.bin
+/seasons.bin

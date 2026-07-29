@@ -1,5 +1,4 @@
 import array
-import gc
 import string
 from itertools import pairwise
 
@@ -11,14 +10,17 @@ NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
 
 app = Flask("mcsr-player-distance")
 cache = Cache("cache-matches")
-graph = ig.Graph.Read_Picklez("graph.pkl")
+graph = ig.Graph.Read_Picklez("graph-trimmed.pkl")
 players_count = graph.vcount()
 matches_count = graph.ecount()
-matches_by_eid = array.array("I", graph.es["match"])
-seasons_by_eid = array.array("B", graph.es["season"])
-del graph.es["match"]
-del graph.es["season"]
-gc.collect()
+with open("matches.bin", "rb") as f:
+    matches_by_eid = array.array("I", f.read())
+with open("seasons.bin", "rb") as f:
+    seasons_by_eid = array.array("B", f.read())
+if len(matches_by_eid) != matches_count:
+    raise RuntimeError("Number of matches in \"matches.bin\" does not match number of matches in graph!")
+if len(seasons_by_eid) != matches_count:
+    raise RuntimeError("Number of seasons in \"seasons.bin\" does not match number of matches in graph!")
 
 
 @app.after_request
