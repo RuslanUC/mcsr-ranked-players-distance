@@ -96,17 +96,22 @@ def fetch_matches(
         before_id = matches.root[-1].id
 
         insert_matches = []
+        insert_matches_players = []
         for match in matches.root:
-            players = [player.nickname.lower() for player in match.players]
-            players.insert(0, "")
-            players.append("")
-            insert_matches.append((match.id, "|".join(players), match.season, match.date))
+            insert_matches.append((match.id, match.season, match.date))
+            for match_player in match.players:
+                insert_matches_players.append((match.id, match_player.nickname.lower()))
 
         cur = db.executemany(
-            "INSERT OR IGNORE INTO `match` (`id`, `players`, `season`, `date`) VALUES (?, ?, ?, ?);",
+            "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`) VALUES (?, ?, ?);",
             insert_matches,
         )
         print(f"Inserted {cur.rowcount} matches")
+        cur = db.executemany(
+            "INSERT OR IGNORE INTO `match_player` (`match_id`, `player_nickname`) VALUES (?, ?);",
+            insert_matches_players,
+        )
+        print(f"Inserted {cur.rowcount} matches-players")
 
         min_id = matches.root[-1].id
         max_id = matches.root[0].id
@@ -154,21 +159,18 @@ def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
 
 
 def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
-    result = set()
-    if JUST_CHECK and False:
-        sep = " "
-        cur = db.execute("SELECT `players` FROM `match_fts` WHERE `players` MATCH ?;", [f"\"{player}\""])
-    else:
-        sep = "|"
-        cur = db.execute("SELECT `players` FROM `match` WHERE `players` LIKE ?;", [f"%|{player}|%"])
+    cur = db.execute(
+        """
+        SELECT mp2.player_nickname
+        FROM match_player mp1
+            LEFT OUTER JOIN match_player mp2 ON mp2.match_id = mp1.match_id
+        WHERE mp1.player_nickname = ? AND mp2.player_nickname != ?
+        ;
+        """,
+        [player, player],
+    )
 
-    for players_separated, in cur:
-        for nickname in players_separated.split(sep):
-            if not nickname:
-                continue
-            result.add(nickname)
-
-    return result
+    return {row[0] for row in cur}
 
 def try_players(db: sqlite3.Connection, player1: str, player2: str) -> tuple[str, ...] | None:
     vs2 = get_vs_nicknames(db, player2)
@@ -204,7 +206,7 @@ def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
 
     while queue:
         nickname = queue.popleft()
-        print(f"Fetching player {nickname}, queued: {len(queue)}")
+        print(f"Fetching player {nickname}, processed: {len(seen)}, queued: {len(queue)}")
 
         for season in range(FROM_SEASON, TO_SEASON + 1):
             fetch_for_player(db, nickname, season)
@@ -230,18 +232,22 @@ def main() -> None:
     );
     CREATE TABLE IF NOT EXISTS `match` (
         `id` BIGINT PRIMARY KEY NOT NULL,
-        `players` VARCHAR(256) NOT NULL,
         `season` INT NOT NULL,
         `date` DATETIME NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS `idx_match_players` ON `match`(`players`);
+    CREATE TABLE IF NOT EXISTS `match_player` (
+        `match_id` BIGINT NOT NULL,
+        `player_nickname` VARCHAR(32) NOT NULL,
+        PRIMARY KEY (`match_id`, `player_nickname`),
+        FOREIGN KEY (`match_id`) REFERENCES `match`(`id`)
+    );
+    CREATE INDEX IF NOT EXISTS `idx_match_player_nickname` ON `match_player`(`player_nickname`);
+    DROP INDEX IF EXISTS `idx_match_players`;
+    --ALTER TABLE `match` DROP COLUMN `players`;
     DROP TABLE IF EXISTS `match_fts`;
     COMMIT;
+    --VACUUM;
     """)
-
-    if JUST_CHECK and False:
-        db.execute("CREATE VIRTUAL TABLE `match_fts` USING fts5(`players`);")
-        db.execute("INSERT INTO `match_fts` (`players`) SELECT REPLACE(`players`, '|', ' ') FROM `match`;")
 
     if RUN_BFS_FROM_PLAYER is not None:
         run_bfs_from_player(db, RUN_BFS_FROM_PLAYER)
@@ -254,23 +260,23 @@ def main() -> None:
     else:
         print("=" * 32)
         print(f"FOUND: {'-'.join(result)}")
-        print("Matches:")
-        for num, (p1, p2) in enumerate(itertools.pairwise(result), start=1):
-            cur = db.execute(
-                """
-                SELECT `id`, `season`, `date` 
-                FROM `match` 
-                WHERE `players` LIKE ? AND `players` LIKE ? 
-                ORDER BY `id` DESC 
-                LIMIT 1;
-                """,
-                [f"%|{p1}|%", f"%|{p2}|%"],
-            )
-            match_id, match_season, match_date = cur.fetchone()
-            print(
-                f" {num}. {p1} vs {p2} in season {match_season}, on {match_date} "
-                f"(match url: https://mcsrranked.com/stats/{p1}/vs/{p2}/{match_id}?season={match_season})"
-            )
+        # print("Matches:")
+        # for num, (p1, p2) in enumerate(itertools.pairwise(result), start=1):
+        #     cur = db.execute(
+        #         """
+        #         SELECT `id`, `season`, `date`
+        #         FROM `match`
+        #         WHERE `players` LIKE ? AND `players` LIKE ?
+        #         ORDER BY `id` DESC
+        #         LIMIT 1;
+        #         """,
+        #         [f"%|{p1}|%", f"%|{p2}|%"],
+        #     )
+        #     match_id, match_season, match_date = cur.fetchone()
+        #     print(
+        #         f" {num}. {p1} vs {p2} in season {match_season}, on {match_date} "
+        #         f"(match url: https://mcsrranked.com/stats/{p1}/vs/{p2}/{match_id}?season={match_season})"
+        #     )
 
     db.close()
 
