@@ -76,7 +76,8 @@ def get_players_distance(player1: str, player2: str) -> dict:
             info = ""
         if not path:
             info += (
-                f"Right now only {players_count} and {matches_count} (out of ~6M) are stored and were searched. "
+                f"Right now only {players_count} players and {matches_count} matches "
+                f"(out of ~6M) are stored and were searched. "
                 f"Please wait up to a couple of days."
             )
         cache[path_cache_key] = path
