@@ -3,7 +3,7 @@ import string
 from itertools import pairwise
 
 from diskcache import Cache
-from flask import Flask, Response
+from flask import Flask, Response, request
 import igraph as ig
 
 NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
@@ -28,7 +28,8 @@ def set_cors_headers(response: Response) -> Response:
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "*"
-    response.headers["Content-Security-Policy"] = "connect-src *;"
+    if request.path.startswith("/distance"):
+        response.headers["Cache-Control"] = "max-age=14400,public,stale-if-error=43200"
     return response
 
 
