@@ -39,6 +39,11 @@ def _nickname_is_valid(nickname: str) -> bool:
     return all(ch in NICKNAME_ALLOWED_CHARACTERS for ch in nickname)
 
 
+@app.get("/stats")
+def get_graph_stats() -> dict:
+    return {"players": players_count, "matches": matches_count}
+
+
 @app.get("/distance/<string:player1>/<string:player2>")
 def get_players_distance(player1: str, player2: str) -> dict:
     if not _nickname_is_valid(player1):

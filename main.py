@@ -1,4 +1,3 @@
-import itertools
 import sqlite3
 import time
 from collections import deque
@@ -205,21 +204,21 @@ def try_players(db: sqlite3.Connection, player1: str, player2: str) -> tuple[str
 
 
 def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
-    queue: deque[str] = deque([player])
+    queue: deque[tuple[str, int]] = deque([(player, 0)])
     seen = {player}
 
     while queue:
-        nickname = queue.popleft()
-        print(f"Fetching player {nickname}, processed: {len(seen) - len(queue)}, queued: {len(queue)}")
+        nickname, depth = queue.popleft()
+        print(f"Fetching player {nickname}, processed: {len(seen) - len(queue)}, queued: {len(queue)}, depth: {depth}")
 
         for season in range(FROM_SEASON, TO_SEASON + 1):
             fetch_for_player(db, nickname, season)
 
-        for other in get_vs_nicknames(db, nickname):
+        for other in sorted(get_vs_nicknames(db, nickname)):
             if other in seen:
                 continue
             seen.add(other)
-            queue.append(other)
+            queue.append((other, depth + 1))
 
 
 def main() -> None:
