@@ -2,7 +2,7 @@ services:
   api:
     build: .
     pull_policy: build
-    command: gunicorn app:app --workers 4 --bind 0.0.0.0:8080
+    command: gunicorn --preload app:app --workers 4 --bind 0.0.0.0:8080
     volumes: ['cache_data:/mcsrpd/cache-matches']
     restart: unless-stopped
     ports:
