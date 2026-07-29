@@ -1,3 +1,5 @@
+import array
+import gc
 import string
 from itertools import pairwise
 
@@ -8,8 +10,15 @@ import igraph as ig
 NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
 
 app = Flask("mcsr-player-distance")
-graph = ig.Graph.Read_Picklez("graph.pkl")
 cache = Cache("cache-matches")
+graph = ig.Graph.Read_Picklez("graph.pkl")
+players_count = graph.vcount()
+matches_count = graph.ecount()
+matches_by_eid = array.array("I", graph.es["match"])
+seasons_by_eid = array.array("B", graph.es["season"])
+del graph.es["match"]
+del graph.es["season"]
+gc.collect()
 
 
 @app.after_request
@@ -59,8 +68,15 @@ def get_players_distance(player1: str, player2: str) -> dict:
                 info = f"Unknown player \"{player1}\". "
             else:
                 info = f"Unknown player \"{player2}\". "
-            info += "You can find more info here: https://github.com/RuslanUC/mcsr-ranked-players-distance."
             path = []
+            info += "You may have spelt nickname wrong or matches of this player are not scanned yet. "
+        else:
+            info = ""
+        if not path:
+            info += (
+                f"Right now only {players_count} and {matches_count} (out of ~6M) are stored and were searched. "
+                f"Please wait up to a couple of days."
+            )
         cache[path_cache_key] = path
 
     if rev:
@@ -70,10 +86,10 @@ def get_players_distance(player1: str, player2: str) -> dict:
     for v1, v2 in pairwise(path):
         p1 = graph.vs[v1]["name"]
         p2 = graph.vs[v2]["name"]
-        edge = graph.es[graph.get_eid(v1, v2)]
+        eid = graph.get_eid(v1, v2)
         matches.append({
-            "id": edge["match"],
-            "season": edge["season"],
+            "id": matches_by_eid[eid],
+            "season": seasons_by_eid[eid],
             "player1": p1,
             "player2": p2,
         })
