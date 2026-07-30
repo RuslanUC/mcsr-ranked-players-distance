@@ -6,6 +6,7 @@ from enum import IntEnum
 from uuid import UUID
 
 import niquests
+from loguru import logger
 from pydantic import BaseModel, RootModel
 
 
@@ -81,16 +82,27 @@ def fetch_matches(
 
         resp = niquests.get(f"{RANKED_HOST}/users/{player}/matches", params=params)
         if resp.status_code == 404:
-            print(f"Player {player} does not exist, what?")
+            logger.warning(f"Player {player} does not exist, what?")
             break
         if resp.status_code == 429:
-            print("Got error 429, re-trying in 60 seconds...")
-            time.sleep(60)
+            wait_seconds = 60
+            if "Ratelimit" in resp.headers:
+                ratelimit = resp.headers["Ratelimit"]
+                for part in ratelimit.split(";"):
+                    part = part.strip()
+                    if part.startswith("t="):
+                        _, _, seconds = part.partition("=")
+                        seconds = seconds.strip()
+                        if seconds.isdigit():
+                            wait_seconds = int(seconds)
+            wait_seconds = max(wait_seconds, 5)
+            logger.warning(f"Got error 429, re-trying in {wait_seconds} seconds...")
+            time.sleep(wait_seconds)
             continue
 
         resp_j = resp.json()
         if resp_j["status"] != "success":
-            print(f"Failed to fetch data for player {player!r}: {resp_j['data']['error']}")
+            logger.warning(f"Failed to fetch data for player {player!r}: {resp_j['data']['error']}")
             break
 
         matches = Matches(root=resp_j["data"])
@@ -115,7 +127,7 @@ def fetch_matches(
         "INSERT OR IGNORE INTO `match_player` (`match_id`, `player_nickname`) VALUES (?, ?);",
         insert_matches_players,
     )
-    print(f"Inserted {matches_cnt} matches and {cur.rowcount} matches-players")
+    logger.debug(f"Inserted {matches_cnt} matches and {cur.rowcount} matches-players")
 
     if min_id is not None and max_id is not None:
         db.execute(
@@ -149,7 +161,7 @@ def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
     else:
         min_match_id, max_match_id, season_fetched = row
         if SKIP_FETCHING_EXISTING or season_fetched:
-            print(f"Skipping fetching season {season} for player {player}")
+            logger.debug(f"Skipping fetching season {season} for player {player}")
             return
         fetch_matches(db, player, season, max_match_id, None)
         fetch_matches(db, player, season, None, min_match_id)
@@ -183,7 +195,7 @@ def try_players(db: sqlite3.Connection, player1: str, player2: str) -> tuple[str
 
     while queue:
         nickname, path = queue.popleft()
-        print(f"Trying {'-'.join(path)}")
+        logger.info(f"Trying {'-'.join(path)}")
 
         for season in range(FROM_SEASON, TO_SEASON + 1):
             fetch_for_player(db, nickname, season)
@@ -209,7 +221,12 @@ def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
 
     while queue:
         nickname, depth = queue.popleft()
-        print(f"Fetching player {nickname}, processed: {len(seen) - len(queue)}, queued: {len(queue)}, depth: {depth}")
+        logger.info(
+            f"Fetching player {nickname}, "
+            f"processed: {len(seen) - len(queue)}, "
+            f"queued: {len(queue)}, "
+            f"depth: {depth}"
+        )
 
         for season in range(FROM_SEASON, TO_SEASON + 1):
             fetch_for_player(db, nickname, season)
@@ -259,10 +276,10 @@ def main() -> None:
 
     result = try_players(db, PLAYER1, PLAYER2)
     if result is None:
-        print("Didn't find the result :(")
+        logger.info("Didn't find the result :(")
     else:
-        print("=" * 32)
-        print(f"FOUND: {'-'.join(result)}")
+        logger.info("=" * 32)
+        logger.success(f"FOUND: {'-'.join(result)}")
         # print("Matches:")
         # for num, (p1, p2) in enumerate(itertools.pairwise(result), start=1):
         #     cur = db.execute(
