@@ -21,6 +21,8 @@ FROM_SEASON = 9
 TO_SEASON = 11
 LAST_SEASON = 11
 
+REQ_SINCE_LAST_RATE_LIMIT = 0
+
 
 class MatchType(IntEnum):
     CASUAL = 1
@@ -59,6 +61,8 @@ class Matches(RootModel):
 def fetch_matches(
         db: sqlite3.Connection, player: str, season: int, after_id: int | None, before_id: int | None,
 ) -> None:
+    global REQ_SINCE_LAST_RATE_LIMIT
+
     if JUST_CHECK:
         return
 
@@ -80,11 +84,15 @@ def fetch_matches(
         if before_id:
             params["before"] = str(before_id)
 
+        REQ_SINCE_LAST_RATE_LIMIT += 1
         resp = niquests.get(f"{RANKED_HOST}/users/{player}/matches", params=params)
         if resp.status_code == 404:
             logger.warning(f"Player {player} does not exist, what?")
             break
         if resp.status_code == 429:
+            logger.info(f"Requests since last rate limit: {REQ_SINCE_LAST_RATE_LIMIT}")
+            REQ_SINCE_LAST_RATE_LIMIT = 0
+
             wait_seconds = 60
             if "Ratelimit" in resp.headers:
                 ratelimit = resp.headers["Ratelimit"]
@@ -117,6 +125,10 @@ def fetch_matches(
             insert_matches.append((match.id, match.season, match.date))
             for match_player in match.players:
                 insert_matches_players.append((match.id, match_player.nickname.lower()))
+
+        if len(matches.root) != 100:
+            logger.debug("Number of matches is not 100, probably no matches left?")
+            break
 
     cur = db.executemany(
         "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`) VALUES (?, ?, ?);",
