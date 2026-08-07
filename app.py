@@ -1,21 +1,24 @@
 import array
 import string
 from itertools import pairwise
+from os import environ
 
 from diskcache import Cache
 from flask import Flask, Response, request
 import igraph as ig
 
 NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
+APP_TYPE = environ.get("APP_TYPE", "mcsr-ranked")
 
 app = Flask("mcsr-player-distance")
 cache = Cache("cache-matches")
-graph = ig.Graph.Read_Picklez("graph-trimmed.pkl")
+graph = ig.Graph.Read_Picklez(f"graph-{APP_TYPE}-trimmed.pkl")
 players_count = graph.vcount()
 matches_count = graph.ecount()
-with open("matches.bin", "rb") as f:
+is_connected = graph.is_connected()
+with open(f"matches-{APP_TYPE}.bin", "rb") as f:
     matches_by_eid = array.array("I", f.read())
-with open("seasons.bin", "rb") as f:
+with open(f"seasons-{APP_TYPE}.bin", "rb") as f:
     seasons_by_eid = array.array("B", f.read())
 if len(matches_by_eid) != matches_count:
     raise RuntimeError("Number of matches in \"matches.bin\" does not match number of matches in graph!")
@@ -41,7 +44,7 @@ def _nickname_is_valid(nickname: str) -> bool:
 
 @app.get("/stats")
 def get_graph_stats() -> dict:
-    return {"players": players_count, "matches": matches_count}
+    return {"players": players_count, "matches": matches_count, "is_connected": is_connected}
 
 
 @app.get("/distance/<string:player1>/<string:player2>")
@@ -55,7 +58,7 @@ def get_players_distance(player1: str, player2: str) -> dict:
     player1 = player1.lower()
     player2 = player2.lower()
 
-    response_cache_key = f"full-resp:{player1}-{player2}".encode("latin1")
+    response_cache_key = f"full-resp:{APP_TYPE}:{player1}-{player2}".encode("latin1")
     if cached_response := cache.get(response_cache_key):
         return cached_response
 
@@ -65,7 +68,7 @@ def get_players_distance(player1: str, player2: str) -> dict:
         rev = True
         player1, player2 = player2, player1
 
-    path_cache_key = f"path:{player1}-{player2}".encode("latin1")
+    path_cache_key = f"path:{APP_TYPE}:{player1}-{player2}".encode("latin1")
     if (path := cache.get(path_cache_key)) is None:
         try:
             path = graph.get_shortest_path(player1, player2)

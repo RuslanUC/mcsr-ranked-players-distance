@@ -1,10 +1,13 @@
 import sqlite3
+from os import environ
 
 import igraph as ig
 
 
 def main() -> None:
-    db = sqlite3.connect("matches.db")
+    app_type = environ.get("APP_TYPE", "mcsr-ranked")
+
+    db = sqlite3.connect(f"matches_{app_type}.db")
     cur = db.execute("""
     SELECT mp1.match_id, m.season, mp1.player_nickname, mp2.player_nickname
     FROM `match_player` mp1
@@ -41,7 +44,7 @@ def main() -> None:
 
     del edges
 
-    g.write_picklez("graph.pkl")
+    g.write_picklez(f"graph-{app_type}.pkl")
 
 if __name__ == "__main__":
     main()

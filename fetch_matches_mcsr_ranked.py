@@ -223,7 +223,7 @@ def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
 
 
 def main() -> None:
-    db = sqlite3.connect("matches.db")
+    db = sqlite3.connect("matches_mcsr-ranked.db")
     db.executescript("""
     BEGIN;
     CREATE TABLE IF NOT EXISTS `player` (
