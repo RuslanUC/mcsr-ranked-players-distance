@@ -12,13 +12,11 @@ from pydantic import BaseModel, RootModel
 
 # RANKED_HOST = "https://api.mcsrranked.com"  # 5 seconds cache
 RANKED_HOST = "https://mcsrranked.com/api"  # 30 seconds cache
-PLAYER1 = "feinberg"
-PLAYER2 = "fatchudlolcow"
 JUST_CHECK = False
 SKIP_FETCHING_EXISTING = True
 RUN_BFS_FROM_PLAYER = "feinberg"
-FROM_SEASON = 9
-TO_SEASON = 11
+FROM_SEASON = 1
+TO_SEASON = 10
 LAST_SEASON = 11
 
 REQ_SINCE_LAST_RATE_LIMIT = 0
@@ -191,40 +189,14 @@ def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
         SELECT mp2.player_nickname
         FROM match_player mp1
             LEFT OUTER JOIN match_player mp2 ON mp2.match_id = mp1.match_id
-        WHERE mp1.player_nickname = ? AND mp2.player_nickname != ?
+            INNER JOIN match m ON m.id = mp1.match_id
+        WHERE mp1.player_nickname = ? AND mp2.player_nickname != ? AND m.season >= ? AND m.season <= ?
         ;
         """,
-        [player, player],
+        [player, player, FROM_SEASON, TO_SEASON],
     )
 
     return {row[0] for row in cur}
-
-def try_players(db: sqlite3.Connection, player1: str, player2: str) -> tuple[str, ...] | None:
-    vs2 = get_vs_nicknames(db, player2)
-
-    queue: deque[tuple[str, tuple[str, ...]]] = deque([(player1, (player1,))])
-    seen = {player1}
-
-    while queue:
-        nickname, path = queue.popleft()
-        logger.info(f"Trying {'-'.join(path)}")
-
-        for season in range(FROM_SEASON, TO_SEASON + 1):
-            fetch_for_player(db, nickname, season)
-
-        vs = get_vs_nicknames(db, nickname)
-        if player2 in vs:
-            return *path, player2
-
-        for other in vs:
-            if other in seen:
-                continue
-            if other in vs2:
-                return *path, other, player2
-            seen.add(other)
-            queue.append((other, (*path, other)))
-
-    return None
 
 
 def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
@@ -275,40 +247,11 @@ def main() -> None:
     );
     CREATE INDEX IF NOT EXISTS `idx_match_player_nickname` ON `match_player`(`player_nickname`);
     DROP INDEX IF EXISTS `idx_match_players`;
-    --ALTER TABLE `match` DROP COLUMN `players`;
     DROP TABLE IF EXISTS `match_fts`;
     COMMIT;
-    --VACUUM;
     """)
 
-    if RUN_BFS_FROM_PLAYER is not None:
-        run_bfs_from_player(db, RUN_BFS_FROM_PLAYER)
-        db.close()
-        return
-
-    result = try_players(db, PLAYER1, PLAYER2)
-    if result is None:
-        logger.info("Didn't find the result :(")
-    else:
-        logger.info("=" * 32)
-        logger.success(f"FOUND: {'-'.join(result)}")
-        # print("Matches:")
-        # for num, (p1, p2) in enumerate(itertools.pairwise(result), start=1):
-        #     cur = db.execute(
-        #         """
-        #         SELECT `id`, `season`, `date`
-        #         FROM `match`
-        #         WHERE `players` LIKE ? AND `players` LIKE ?
-        #         ORDER BY `id` DESC
-        #         LIMIT 1;
-        #         """,
-        #         [f"%|{p1}|%", f"%|{p2}|%"],
-        #     )
-        #     match_id, match_season, match_date = cur.fetchone()
-        #     print(
-        #         f" {num}. {p1} vs {p2} in season {match_season}, on {match_date} "
-        #         f"(match url: https://mcsrranked.com/stats/{p1}/vs/{p2}/{match_id}?season={match_season})"
-        #     )
+    run_bfs_from_player(db, RUN_BFS_FROM_PLAYER)
 
     db.close()
 
