@@ -15,6 +15,7 @@ RANKED_HOST = "https://mcsrranked.com/api"  # 30 seconds cache
 JUST_CHECK = False
 SKIP_FETCHING_EXISTING = True
 RUN_BFS_FROM_PLAYER = "feinberg"
+OFFSET_PLAYER = None
 FROM_SEASON = 1
 TO_SEASON = 10
 LAST_SEASON = 11
@@ -190,10 +191,10 @@ def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
         FROM match_player mp1
             LEFT OUTER JOIN match_player mp2 ON mp2.match_id = mp1.match_id
             INNER JOIN match m ON m.id = mp1.match_id
-        WHERE mp1.player_nickname = ? AND mp2.player_nickname != ? AND m.season >= ? AND m.season <= ?
+        WHERE mp1.player_nickname = ? AND mp2.player_nickname != ?
         ;
         """,
-        [player, player, FROM_SEASON, TO_SEASON],
+        [player, player],
     )
 
     return {row[0] for row in cur}
@@ -202,6 +203,7 @@ def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
 def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
     queue: deque[tuple[str, int]] = deque([(player, 0)])
     seen = {player}
+    skip = OFFSET_PLAYER is not None
 
     while queue:
         nickname, depth = queue.popleft()
@@ -212,8 +214,12 @@ def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
             f"depth: {depth}"
         )
 
-        for season in range(FROM_SEASON, TO_SEASON + 1):
-            fetch_for_player(db, nickname, season)
+        if not skip:
+            for season in range(FROM_SEASON, TO_SEASON + 1):
+                fetch_for_player(db, nickname, season)
+
+        if nickname == OFFSET_PLAYER:
+            skip = False
 
         for other in sorted(get_vs_nicknames(db, nickname)):
             if other in seen:
