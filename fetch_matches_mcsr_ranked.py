@@ -57,8 +57,7 @@ class Matches(RootModel):
 
 
 class SeasonResult(BaseModel):
-    lowest: int | float | None
-    highest: int | float | None
+    ...
 
 
 class SeasonsResponse(BaseModel):
