@@ -12,8 +12,7 @@ from pydantic import BaseModel, RootModel
 
 # RANKED_HOST = "https://api.mcsrranked.com"  # 5 seconds cache
 RANKED_HOST = "https://mcsrranked.com/api"  # 30 seconds cache
-JUST_CHECK = False
-SKIP_FETCHING_EXISTING = True
+SKIP_FETCHING_EXISTING = False
 RUN_BFS_FROM_PLAYER = "feinberg"
 OFFSET_PLAYER = None
 FROM_SEASON = 1
@@ -57,13 +56,60 @@ class Matches(RootModel):
     root: list[MatchInfo]
 
 
+class SeasonResult(BaseModel):
+    lowest: int | float | None
+    highest: int | float | None
+
+
+class SeasonsResponse(BaseModel):
+    seasonResults: dict[int, SeasonResult]
+
+
+class Break(Exception):
+    ...
+
+
+class Continue(Exception):
+    ...
+
+
+def _process_response(player: str, resp: niquests.Response) -> dict:
+    global REQ_SINCE_LAST_RATE_LIMIT
+
+    if resp.status_code == 404:
+        logger.warning(f"Player {player} does not exist, what?")
+        raise Break
+    if resp.status_code == 429:
+        logger.info(f"Requests since last rate limit: {REQ_SINCE_LAST_RATE_LIMIT}")
+        REQ_SINCE_LAST_RATE_LIMIT = 0
+
+        wait_seconds = 60
+        if "Ratelimit" in resp.headers:
+            ratelimit = resp.headers["Ratelimit"]
+            for part in ratelimit.split(";"):
+                part = part.strip()
+                if part.startswith("t="):
+                    _, _, seconds = part.partition("=")
+                    seconds = seconds.strip()
+                    if seconds.isdigit():
+                        wait_seconds = int(seconds)
+        wait_seconds = max(wait_seconds, 5)
+        logger.warning(f"Got error 429, re-trying in {wait_seconds} seconds...")
+        time.sleep(wait_seconds)
+        raise Continue
+
+    resp_j = resp.json()
+    if resp_j["status"] != "success":
+        logger.warning(f"Failed to fetch data for player {player!r}: {resp_j['data']['error']}")
+        raise Break
+
+    return resp_j
+
+
 def fetch_matches(
         db: sqlite3.Connection, player: str, season: int, after_id: int | None, before_id: int | None,
 ) -> None:
     global REQ_SINCE_LAST_RATE_LIMIT
-
-    if JUST_CHECK:
-        return
 
     insert_matches = []
     insert_matches_players = []
@@ -85,32 +131,12 @@ def fetch_matches(
 
         REQ_SINCE_LAST_RATE_LIMIT += 1
         resp = niquests.get(f"{RANKED_HOST}/users/{player}/matches", params=params)
-        if resp.status_code == 404:
-            logger.warning(f"Player {player} does not exist, what?")
+        try:
+            resp_j = _process_response(player, resp)
+        except Break:
             break
-        if resp.status_code == 429:
-            logger.info(f"Requests since last rate limit: {REQ_SINCE_LAST_RATE_LIMIT}")
-            REQ_SINCE_LAST_RATE_LIMIT = 0
-
-            wait_seconds = 60
-            if "Ratelimit" in resp.headers:
-                ratelimit = resp.headers["Ratelimit"]
-                for part in ratelimit.split(";"):
-                    part = part.strip()
-                    if part.startswith("t="):
-                        _, _, seconds = part.partition("=")
-                        seconds = seconds.strip()
-                        if seconds.isdigit():
-                            wait_seconds = int(seconds)
-            wait_seconds = max(wait_seconds, 5)
-            logger.warning(f"Got error 429, re-trying in {wait_seconds} seconds...")
-            time.sleep(wait_seconds)
+        except Continue:
             continue
-
-        resp_j = resp.json()
-        if resp_j["status"] != "success":
-            logger.warning(f"Failed to fetch data for player {player!r}: {resp_j['data']['error']}")
-            break
 
         matches = Matches(root=resp_j["data"])
         if not matches.root:
@@ -155,33 +181,96 @@ def fetch_matches(
     db.commit()
 
 
-def fetch_for_player(db: sqlite3.Connection, player: str, season: int) -> None:
-    cur = db.cursor()
-    cur.execute(
+def fetch_seasons_with_matches(player: str) -> set[int]:
+    global REQ_SINCE_LAST_RATE_LIMIT
+
+    while True:
+        REQ_SINCE_LAST_RATE_LIMIT += 1
+        resp = niquests.get(f"{RANKED_HOST}/users/{player}/seasons")
+        try:
+            resp_j = _process_response(player, resp)
+        except Break:
+            break
+        except Continue:
+            continue
+
+        seasons_resp = SeasonsResponse(**resp_j["data"])
+        return set(seasons_resp.seasonResults.keys())
+
+    return set()
+
+
+def fetch_for_player(db: sqlite3.Connection, player: str) -> None:
+    cur = db.execute(
         """
-        SELECT `min_match_id`, `max_match_id`, `season_fetched`
+        SELECT `season`, `min_match_id`, `max_match_id`, `season_fetched`
         FROM `player`
-        WHERE `nickname` = ? AND `season` = ?;
+        WHERE `nickname` = ? AND `season` >= ? AND `season` <= ?;
         """,
-        [player, season],
+        [player, FROM_SEASON, TO_SEASON],
     )
-    row = cur.fetchone()
-    if row is None:
-        db.execute("INSERT INTO `player` (`nickname`, `season`) VALUES (?, ?);", [player, season])
-        fetch_matches(db, player, season, None, None)
-    else:
-        min_match_id, max_match_id, season_fetched = row
+
+    need_fetch_seasons: dict[int, tuple[int, int] | None] = {
+        season: None
+        for season in range(FROM_SEASON, TO_SEASON + 1)
+    }
+
+    for season, min_match_id, max_match_id, season_fetched in cur:
         if SKIP_FETCHING_EXISTING or season_fetched:
             logger.debug(f"Skipping fetching season {season} for player {player}")
-            return
-        fetch_matches(db, player, season, max_match_id, None)
-        fetch_matches(db, player, season, None, min_match_id)
+            del need_fetch_seasons[season]
+        else:
+            need_fetch_seasons[season] = (min_match_id, max_match_id)
 
-    if season < LAST_SEASON:
-        db.execute(
-            "UPDATE `player` SET `season_fetched` = 1 WHERE `nickname` = ? AND `season` = ?;",
+    if len(need_fetch_seasons.keys() - {LAST_SEASON}) > 2:
+        to_fetch = {}
+        seasons_with_matches = fetch_seasons_with_matches(player)
+        for season in seasons_with_matches:
+            if season in need_fetch_seasons:
+                to_fetch[season] = need_fetch_seasons.pop(season)
+        to_insert = [
             [player, season]
-        )
+            for season, ids in need_fetch_seasons.items()
+            if ids is None and season != LAST_SEASON
+        ]
+        to_skip = [
+            [player, season]
+            for season, ids in need_fetch_seasons.items()
+            if ids is not None and season != LAST_SEASON
+        ]
+
+        skipped = 0
+        if to_insert:
+            cur = db.executemany(
+                "INSERT INTO `player`(`nickname`, `season`, `season_fetched`) VALUES (?, ?, 1);", to_insert,
+            )
+            skipped += cur.rowcount
+        if to_skip:
+            cur = db.executemany(
+                "UPDATE `player` SET `season_fetched` = 1 WHERE `nickname` = ? AND `season` = ?;", to_skip,
+            )
+            skipped += cur.rowcount
+
+        if skipped:
+            db.commit()
+            logger.debug(f"Skipped {skipped} seasons for player {player}")
+
+        need_fetch_seasons = to_fetch
+
+    for season, ids in need_fetch_seasons.items():
+        if ids is None:
+            db.execute("INSERT INTO `player` (`nickname`, `season`) VALUES (?, ?);", [player, season])
+            fetch_matches(db, player, season, None, None)
+        else:
+            min_match_id, max_match_id = ids
+            fetch_matches(db, player, season, max_match_id, None)
+            fetch_matches(db, player, season, None, min_match_id)
+
+        if season < LAST_SEASON:
+            db.execute(
+                "UPDATE `player` SET `season_fetched` = 1 WHERE `nickname` = ? AND `season` = ?;",
+                [player, season]
+            )
 
 
 def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
@@ -215,8 +304,7 @@ def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
         )
 
         if not skip:
-            for season in range(FROM_SEASON, TO_SEASON + 1):
-                fetch_for_player(db, nickname, season)
+            fetch_for_player(db, nickname)
 
         if nickname == OFFSET_PLAYER:
             skip = False
