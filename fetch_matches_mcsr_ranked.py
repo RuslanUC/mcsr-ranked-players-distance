@@ -213,13 +213,17 @@ def fetch_for_player(db: sqlite3.Connection, player: str) -> None:
         season: None
         for season in range(FROM_SEASON, TO_SEASON + 1)
     }
+    skipped = []
 
     for season, min_match_id, max_match_id, season_fetched in cur:
         if SKIP_FETCHING_EXISTING or season_fetched:
-            logger.debug(f"Skipping fetching season {season} for player {player}")
+            skipped.append(season)
             del need_fetch_seasons[season]
         else:
             need_fetch_seasons[season] = (min_match_id, max_match_id)
+
+    if skipped:
+        logger.debug(f"Skipping fetching seasons {', '.join(map(str, sorted(skipped)))} for player {player}")
 
     if len(need_fetch_seasons.keys() - {LAST_SEASON}) > 2:
         to_fetch = {}
