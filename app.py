@@ -59,7 +59,10 @@ def get_players_distance(player1: str, player2: str) -> dict:
 
     path_cache_key = f"path:{APP_TYPE}:{player1}-{player2}".encode("latin1")
     if (path := cache.get(path_cache_key)) is None:
-        path = graph.get_path(player1, player2)
+        try:
+            path = graph.get_path(player1, player2)
+        except ValueError:
+            path = []
 
         if not path:
             info = ""
@@ -69,7 +72,8 @@ def get_players_distance(player1: str, player2: str) -> dict:
                 info = f"Unknown player \"{player2}\". "
 
             info += (
-                "You may have spelt nickname wrong or matches of this player are not scanned yet. "
+                "You may have spelt nickname wrong, matches of either of these players are not scanned yet, "
+                "or there is no direct match chain between them. "
                 "Right now matches from season 12 are not scanned."
             )
 
