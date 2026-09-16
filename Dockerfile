@@ -10,24 +10,25 @@ ENV PATH="/root/.local/bin/:$PATH"
 
 COPY pyproject.toml pyproject.toml
 COPY uv.lock uv.lock
+COPY pymcsrd-c pymcsrd-c
 
-ENV UV_NO_DEV=1
 ENV UV_LINK_MODE=copy
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
+RUN --mount=type=cache,target=/root/.cache/uv VIRTUAL_ENV=.venv uv sync --locked --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv VIRTUAL_ENV=.venv-dev uv sync --locked --active
 
 
-FROM python:3.14-slim-bookworm AS trim-graph
+FROM python:3.14-slim-bookworm AS compile-graph
 
 ARG APP_TYPE
 ENV APP_TYPE=${APP_TYPE}
 WORKDIR /mcsrpd
 
-COPY --from=deps /mcsrpd/.venv /mcsrpd/.venv
-COPY graph-${APP_TYPE}.pkl extract_matches_seasons_from_graph.py ./
+COPY --from=deps /mcsrpd/.venv-dev /mcsrpd/.venv
+COPY graph-${APP_TYPE}.pkl compile_graph.py ./
 
 ENV PATH="/mcsrpd/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
-RUN python extract_matches_seasons_from_graph.py
+RUN python compile_graph.py
 
 
 FROM python:3.14-slim-bookworm
@@ -41,9 +42,7 @@ RUN apt update -y && apt install dumb-init curl -y && apt autoremove && apt clea
 
 COPY app.py app.py
 COPY --from=deps /mcsrpd/.venv /mcsrpd/.venv
-COPY --from=trim-graph /mcsrpd/graph-${APP_TYPE}-trimmed.pkl /mcsrpd/graph-${APP_TYPE}-trimmed.pkl
-COPY --from=trim-graph /mcsrpd/matches-${APP_TYPE}.bin /mcsrpd/matches-${APP_TYPE}.bin
-COPY --from=trim-graph /mcsrpd/seasons-${APP_TYPE}.bin /mcsrpd/seasons-${APP_TYPE}.bin
+COPY --from=compile-graph /mcsrpd/graph /mcsrpd/graph
 
 ENV PATH="/mcsrpd/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1

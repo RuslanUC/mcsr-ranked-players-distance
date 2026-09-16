@@ -5,3 +5,5 @@
 /matches.bin
 /seasons.bin
 /frontend-dist
+/graph
+*.so

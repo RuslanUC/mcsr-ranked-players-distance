@@ -1,29 +1,18 @@
-import array
 import string
-from itertools import pairwise
 from os import environ
 
 from diskcache import Cache
 from flask import Flask, Response, request
-import igraph as ig
+from pymcsrd_c import MatchesGraph
 
 NICKNAME_ALLOWED_CHARACTERS = {*string.ascii_letters, *string.digits, "_"}
 APP_TYPE = environ.get("APP_TYPE", "mcsr-ranked")
 
 app = Flask("mcsr-player-distance")
 cache = Cache("cache-matches")
-graph = ig.Graph.Read_Picklez(f"graph-{APP_TYPE}-trimmed.pkl")
+graph = MatchesGraph(f"graph/{APP_TYPE}", mmap=True)
 players_count = graph.vcount()
 matches_count = graph.ecount()
-is_connected = graph.is_connected()
-with open(f"matches-{APP_TYPE}.bin", "rb") as f:
-    matches_by_eid = array.array("I", f.read())
-with open(f"seasons-{APP_TYPE}.bin", "rb") as f:
-    seasons_by_eid = array.array("B", f.read())
-if len(matches_by_eid) != matches_count:
-    raise RuntimeError("Number of matches in \"matches.bin\" does not match number of matches in graph!")
-if len(seasons_by_eid) != matches_count:
-    raise RuntimeError("Number of seasons in \"seasons.bin\" does not match number of matches in graph!")
 
 
 @app.after_request
@@ -44,7 +33,7 @@ def _nickname_is_valid(nickname: str) -> bool:
 
 @app.get("/stats")
 def get_graph_stats() -> dict:
-    return {"players": players_count, "matches": matches_count, "is_connected": is_connected}
+    return {"players": players_count, "matches": matches_count}
 
 
 @app.get("/distance/<string:player1>/<string:player2>")
@@ -70,40 +59,32 @@ def get_players_distance(player1: str, player2: str) -> dict:
 
     path_cache_key = f"path:{APP_TYPE}:{player1}-{player2}".encode("latin1")
     if (path := cache.get(path_cache_key)) is None:
-        try:
-            path = graph.get_shortest_path(player1, player2)
-        except ValueError:
-            try:
-                graph.vs.find(player1)
-            except ValueError:
-                info = f"Unknown player \"{player1}\". "
-            else:
-                info = f"Unknown player \"{player2}\". "
-            path = []
-            info += "You may have spelt nickname wrong or matches of this player are not scanned yet. "
-        else:
-            info = ""
+        path = graph.get_path(player1, player2)
+
         if not path:
+            info = ""
+            if not graph.has_player(player1):
+                info = f"Unknown player \"{player1}\". "
+            elif not graph.has_player(player2):
+                info = f"Unknown player \"{player2}\". "
+
             info += (
-                f"Right now only {players_count} players and {matches_count} matches "
-                f"(out of ~6M) are stored and were searched. "
-                f"Please wait up to a couple of days."
+                "You may have spelt nickname wrong or matches of this player are not scanned yet. "
+                "Right now matches from season 12 are not scanned."
             )
+
         cache[path_cache_key] = path
 
     if rev:
         path.reverse()
 
     matches = []
-    for v1, v2 in pairwise(path):
-        p1 = graph.vs[v1]["name"]
-        p2 = graph.vs[v2]["name"]
-        eid = graph.get_eid(v1, v2)
+    for player1, player2, match_id, match_season in path:
         matches.append({
-            "id": matches_by_eid[eid],
-            "season": seasons_by_eid[eid],
-            "player1": p1,
-            "player2": p2,
+            "id": match_id,
+            "season": match_season,
+            "player1": player1,
+            "player2": player2,
         })
 
     result = {
