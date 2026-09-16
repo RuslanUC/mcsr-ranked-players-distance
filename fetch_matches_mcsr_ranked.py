@@ -97,7 +97,13 @@ def _process_response(player: str, resp: niquests.Response) -> dict:
         time.sleep(wait_seconds)
         raise Continue
 
-    resp_j = resp.json()
+    try:
+        resp_j = resp.json()
+    except niquests.JSONDecodeError:
+        wait_seconds = 5
+        logger.warning(f"Got JSONDecodeError, re-trying in {wait_seconds} seconds...")
+        time.sleep(wait_seconds)
+        raise Continue
     if resp_j["status"] != "success":
         logger.warning(f"Failed to fetch data for player {player!r}: {resp_j['data']['error']}")
         raise Break
