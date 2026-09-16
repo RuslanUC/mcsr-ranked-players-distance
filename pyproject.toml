@@ -11,4 +11,5 @@ dependencies = [
     "loguru>=0.7.3",
     "niquests>=3.20.1",
     "pydantic>=2.13.4",
+    "tqdm>=4.70.0",
 ]
