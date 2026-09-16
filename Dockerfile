@@ -3,7 +3,7 @@ FROM python:3.14-slim-bookworm AS deps
 WORKDIR /mcsrpd
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt update -y && apt install curl -y
+RUN apt update -y && apt install curl build-essential python3-dev -y
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
 RUN sh /uv-installer.sh && rm /uv-installer.sh
 ENV PATH="/root/.local/bin/:$PATH"
