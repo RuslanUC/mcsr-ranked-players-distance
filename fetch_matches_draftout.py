@@ -55,6 +55,7 @@ def fetch_matches(db: sqlite3.Connection, player: str, season: int) -> None:
         for match in matches.points:
             min_id = min(min_id, match.id)
             max_id = max(max_id, match.id)
+            # TODO: i forgot what this timestamp is
             insert_matches.append((match.id, season, datetime.fromtimestamp(1779583272101 / 1000, UTC)))
             insert_matches_players.append((match.id, player))
             insert_matches_players.append((match.id, match.opponent_name.lower()))

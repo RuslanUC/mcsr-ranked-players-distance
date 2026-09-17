@@ -13,11 +13,13 @@ from pydantic import BaseModel, RootModel
 # RANKED_HOST = "https://api.mcsrranked.com"  # 5 seconds cache
 RANKED_HOST = "https://mcsrranked.com/api"  # 30 seconds cache
 SKIP_FETCHING_EXISTING = False
-RUN_BFS_FROM_PLAYER = "feinberg"
+RUN_BFS_FROM_PLAYER: str | None = None
 OFFSET_PLAYER = None
 FROM_SEASON = 1
 TO_SEASON = 11
 LAST_SEASON = 12
+FETCH_MATCHES_FROM_ID = 12897430
+FETCH_MATCHES_SEASON = 12
 
 REQ_SINCE_LAST_RATE_LIMIT = 0
 
@@ -72,7 +74,7 @@ class Continue(Exception):
     ...
 
 
-def _process_response(player: str, resp: niquests.Response) -> dict:
+def _process_response(player: str | None, resp: niquests.Response) -> dict:
     global REQ_SINCE_LAST_RATE_LIMIT
 
     if resp.status_code == 404:
@@ -111,7 +113,7 @@ def _process_response(player: str, resp: niquests.Response) -> dict:
     return resp_j
 
 
-def fetch_matches(
+def fetch_matches_for_player(
         db: sqlite3.Connection, player: str, season: int, after_id: int | None, before_id: int | None,
 ) -> None:
     global REQ_SINCE_LAST_RATE_LIMIT
@@ -184,6 +186,57 @@ def fetch_matches(
             [min_id, min_id, max_id, player, season],
         )
     db.commit()
+
+
+def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int, before_id: int) -> int:
+    global REQ_SINCE_LAST_RATE_LIMIT
+
+    insert_matches = []
+    insert_matches_players = []
+    max_id = after_id
+
+    while True:
+        params = {
+            "count": "100",
+            "type": str(MatchType.RANKED.value),
+            "season": str(season),
+            "after": str(after_id),
+            "before": str(before_id),
+        }
+
+        REQ_SINCE_LAST_RATE_LIMIT += 1
+        resp = niquests.get(f"{RANKED_HOST}/matches", params=params)
+        try:
+            resp_j = _process_response(None, resp)
+        except Break:
+            break
+        except Continue:
+            continue
+
+        matches = Matches(root=resp_j["data"])
+
+        for match in matches.root:
+            max_id = max(max_id, match.id)
+            insert_matches.append((match.id, match.season, match.date))
+            for match_player in match.players:
+                insert_matches_players.append((match.id, match_player.nickname.lower()))
+
+        break
+
+    cur = db.executemany(
+        "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`) VALUES (?, ?, ?);",
+        insert_matches,
+    )
+    matches_cnt = cur.rowcount
+    cur = db.executemany(
+        "INSERT OR IGNORE INTO `match_player` (`match_id`, `player_nickname`) VALUES (?, ?);",
+        insert_matches_players,
+    )
+    logger.debug(f"Inserted {matches_cnt} matches and {cur.rowcount} matches-players")
+
+    db.commit()
+
+    return max_id
 
 
 def fetch_seasons_with_matches(player: str) -> set[int]:
@@ -269,11 +322,11 @@ def fetch_for_player(db: sqlite3.Connection, player: str) -> None:
     for season, ids in need_fetch_seasons.items():
         if ids is None:
             db.execute("INSERT INTO `player` (`nickname`, `season`) VALUES (?, ?);", [player, season])
-            fetch_matches(db, player, season, None, None)
+            fetch_matches_for_player(db, player, season, None, None)
         else:
             min_match_id, max_match_id = ids
-            fetch_matches(db, player, season, max_match_id, None)
-            fetch_matches(db, player, season, None, min_match_id)
+            fetch_matches_for_player(db, player, season, max_match_id, None)
+            fetch_matches_for_player(db, player, season, None, min_match_id)
 
         if season < LAST_SEASON:
             db.execute(
@@ -288,7 +341,7 @@ def get_vs_nicknames(db: sqlite3.Connection, player: str) -> set[str]:
         SELECT mp2.player_nickname
         FROM match_player mp1
             LEFT OUTER JOIN match_player mp2 ON mp2.match_id = mp1.match_id
-            INNER JOIN match m ON m.id = mp1.match_id
+            INNER JOIN `match` m ON m.id = mp1.match_id
         WHERE mp1.player_nickname = ? AND mp2.player_nickname != ?
         ;
         """,
@@ -325,6 +378,24 @@ def run_bfs_from_player(db: sqlite3.Connection, player: str) -> None:
             queue.append((other, depth + 1))
 
 
+def fetch_matches_from_id(db: sqlite3.Connection, from_id: int, season: int) -> None:
+    if from_id == 0:
+        cur = db.execute("SELECT MAX(`id`) FROM `match` WHERE season = ?;", [season])
+        max_id, = cur.fetchone()
+        if max_id is None:
+            raise ValueError(f"No matches for season {season} found, \"from_id\" must be set")
+        from_id = max_id
+
+    while True:
+        new_from_id = fetch_matches_between_ids(db, season, from_id, from_id + 100)
+        if from_id == new_from_id:
+            logger.info(f"{from_id} == {new_from_id}, probably no new matches?")
+            break
+
+        logger.info(f"New from_id: {new_from_id}")
+        from_id = new_from_id
+
+
 def main() -> None:
     db = sqlite3.connect("matches_mcsr-ranked.db")
     db.executescript("""
@@ -351,10 +422,14 @@ def main() -> None:
     CREATE INDEX IF NOT EXISTS `idx_match_player_nickname` ON `match_player`(`player_nickname`);
     DROP INDEX IF EXISTS `idx_match_players`;
     DROP TABLE IF EXISTS `match_fts`;
+    CREATE INDEX IF NOT EXISTS `idx_match_season_id` ON `match`(`season`, `id`);
     COMMIT;
     """)
 
-    run_bfs_from_player(db, RUN_BFS_FROM_PLAYER)
+    if RUN_BFS_FROM_PLAYER is not None:
+        run_bfs_from_player(db, RUN_BFS_FROM_PLAYER)
+    elif FETCH_MATCHES_FROM_ID is not None:
+        fetch_matches_from_id(db, FETCH_MATCHES_FROM_ID, FETCH_MATCHES_SEASON)
 
     db.close()
 
