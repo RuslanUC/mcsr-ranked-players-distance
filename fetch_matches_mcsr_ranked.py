@@ -18,7 +18,19 @@ OFFSET_PLAYER = None
 FROM_SEASON = 1
 TO_SEASON = 11
 LAST_SEASON = 12
-FETCH_MATCHES_FROM_ID = 12897430
+# season 1 min id - 100876, fetched max id - 338903
+# season 2 min id - 338910, fetched max id - 519261
+# season 3 min id - 519262, fetched max id - 674675
+# season 4 min id - 674680, fetched max id - 727169
+# season 5 min id - 909754, fetched max id - 1168207
+# season 6 min id - 1168210, fetched max id - 1499236
+# season 7 min id - 1499237, fetched max id - 1842958
+# season 8 min id - 1970850, fetched max id - 2110220
+# season 9 min id - 2803592, fetched max id - 4547052
+# season 10 min id - 4547099, fetched max id - 9676810
+# season 11 min id - 9676905, fetched max id - 12897285
+# season 12 min id - 12897439, fetched max id - ...
+FETCH_MATCHES_FROM_ID = 0
 FETCH_MATCHES_SEASON = 12
 
 REQ_SINCE_LAST_RATE_LIMIT = 0
@@ -81,7 +93,7 @@ def _process_response(player: str | None, resp: niquests.Response) -> dict:
         logger.warning(f"Player {player} does not exist, what?")
         raise Break
     if resp.status_code == 429:
-        logger.info(f"Requests since last rate limit: {REQ_SINCE_LAST_RATE_LIMIT}")
+        logger.info(f"Requests since last rate limit: {REQ_SINCE_LAST_RATE_LIMIT - 1}")
         REQ_SINCE_LAST_RATE_LIMIT = 0
 
         wait_seconds = 60
@@ -215,11 +227,21 @@ def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int
 
         matches = Matches(root=resp_j["data"])
 
+        min_id = before_id
+
         for match in matches.root:
+            min_id = min(min_id, match.id)
             max_id = max(max_id, match.id)
             insert_matches.append((match.id, match.season, match.date))
             for match_player in match.players:
                 insert_matches_players.append((match.id, match_player.nickname.lower()))
+
+        if before_id - after_id > 100 and len(matches.root) == 100 and min_id > after_id:
+            logger.warning(
+                "Api returned number of matches that equals to the limit, but before-after has more than 100 matches. "
+                f"Will fetch matches {after_id}-{min_id}."
+            )
+            fetch_matches_between_ids(db, season, after_id, min_id)
 
         break
 
@@ -385,9 +407,10 @@ def fetch_matches_from_id(db: sqlite3.Connection, from_id: int, season: int) -> 
         if max_id is None:
             raise ValueError(f"No matches for season {season} found, \"from_id\" must be set")
         from_id = max_id
+        logger.info(f"Last known match id for season {season} is {from_id}")
 
     while True:
-        new_from_id = fetch_matches_between_ids(db, season, from_id, from_id + 100)
+        new_from_id = fetch_matches_between_ids(db, season, from_id, from_id + 170)
         if from_id == new_from_id:
             logger.info(f"{from_id} == {new_from_id}, probably no new matches?")
             break
