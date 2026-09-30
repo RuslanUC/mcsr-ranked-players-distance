@@ -32,6 +32,7 @@ LAST_SEASON = 12
 # season 12 min id - 12897439, fetched max id - ...
 FETCH_MATCHES_FROM_ID = 0
 FETCH_MATCHES_SEASON = 12
+FETCH_MATCHES_WAIT_FOR_NEW = True
 
 REQ_SINCE_LAST_RATE_LIMIT = 0
 
@@ -413,7 +414,11 @@ def fetch_matches_from_id(db: sqlite3.Connection, from_id: int, season: int) -> 
         new_from_id = fetch_matches_between_ids(db, season, from_id, from_id + 170)
         if from_id == new_from_id:
             logger.info(f"{from_id} == {new_from_id}, probably no new matches?")
-            break
+            if FETCH_MATCHES_WAIT_FOR_NEW:
+                time.sleep(60 * 5)
+                continue
+            else:
+                break
 
         logger.info(f"New from_id: {new_from_id}")
         from_id = new_from_id
