@@ -74,7 +74,9 @@ def get_players_distance(player1: str, player2: str) -> dict:
             info += (
                 "You may have spelt nickname wrong, matches of either of these players are not scanned yet, "
                 "or there is no direct match chain between them. "
-                "Right now matches from season 12 are not scanned."
+                "I update matches once every couple of days/weeks, "
+                "so if either of players had their first match in the last couple of days - "
+                "please wait up to two weeks for me to update matches database."
             )
 
         cache[path_cache_key] = path
