@@ -9,9 +9,6 @@ dependencies = [
     "pymcsrd-c",
 ]
 
-[tool.uv.sources]
-pymcsrd-c = { path = "pymcsrd-c" }
-
 [dependency-groups]
 dev = [
     "igraph>=1.0.0",
@@ -21,3 +18,9 @@ dev = [
     "pydantic>=2.13.4",
     "tqdm>=4.70.0",
 ]
+
+[tool.uv.sources]
+pymcsrd-c = { path = "pymcsrd-c" }
+
+#[tool.uv]
+#reinstall-package = ["pymcsrd-c"]

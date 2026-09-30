@@ -5,10 +5,15 @@
 
 #define BFS_MAX_DEPTH UINT16_MAX
 
-typedef struct NicknameToVertex {
+typedef struct {
     const char* key;
     uint32_t value;
 } NicknameToVertex;
+
+typedef struct {
+    uint32_t key;
+    uint32_t value;
+} VertexToComponent;
 
 typedef struct Graph {
     uint32_t n;
@@ -26,6 +31,8 @@ typedef struct Graph {
     uint32_t* match_ids; // m
     uint8_t* match_seasons; // m
     uint32_t* edge_ids; // m * 2
+    // component ids start at 1
+    VertexToComponent* vertex_to_component;
 } Graph;
 
 typedef struct BFSContext {

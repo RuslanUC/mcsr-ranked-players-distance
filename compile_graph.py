@@ -74,6 +74,14 @@ def main() -> None:
     with open(out_dir / "edge_ids.bin", "wb") as f:
         f.write(array.array("I", edge_ids).tobytes())
 
+    print("Calculated components...")
+    components = sorted(graph.connected_components(mode="weak"), key=lambda comp: len(comp))
+    del components[-1]
+    with open(out_dir / "components.bin", "wb") as f:
+        for component in components:
+            f.write(struct.pack("<I", len(component)))
+            f.write(array.array("I", component).tobytes())
+
 
 if __name__ == "__main__":
     main()

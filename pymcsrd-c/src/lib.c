@@ -203,6 +203,32 @@ static Graph* graph_load_impl(const char* filename, int use_mmap) {
         }
     }
 
+    {
+        FILE* f = fopen_in_dir(filename, "components.bin");
+        if(!f) {
+            graph_free(g);
+            return NULL;
+        }
+
+        uint32_t num_vertices = 0;
+        uint32_t component_id = 1;
+        while(fread(&num_vertices, sizeof(num_vertices), 1, f) == 1) {
+            uint32_t vertex_id;
+            for(uint32_t i = 0; i < num_vertices; ++i) {
+                if(fread(&vertex_id, sizeof(vertex_id), 1, f) != 1) {
+                    fprintf(stderr, "Unexpected EOF when reading components.bin\n");
+                    graph_free(g);
+                    return NULL;
+                }
+                hmput(g->vertex_to_component, vertex_id, component_id);
+            }
+
+            component_id++;
+        }
+
+        fclose(f);
+    }
+
     return g;
 }
 
@@ -244,6 +270,7 @@ void graph_free(Graph* g) {
     } else {
         free(g->nicknames_buf);
     }
+    hmfree(g->vertex_to_component);
     free(g);
 }
 
@@ -291,6 +318,18 @@ uint32_t bidirectional_bfs(BFSContext* ctx, uint32_t source, uint32_t target, ui
 
     if(source == target)
         return source;
+
+    VertexToComponent* vertex_to_component = ctx->g->vertex_to_component;
+
+    ptrdiff_t source_idx;
+    ptrdiff_t target_idx;
+    hmget_ts(vertex_to_component, source, source_idx);
+    hmget_ts(vertex_to_component, target, target_idx);
+    const uint32_t source_component_id = source_idx >= 0 ? vertex_to_component[source_idx].value : 0;
+    const uint32_t target_component_id = target_idx >= 0 ? vertex_to_component[target_idx].value : 0;
+
+    if(source_component_id != target_component_id)
+        return UINT32_MAX;
 
     ++ctx->generation;
 
