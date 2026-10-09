@@ -1,5 +1,6 @@
 import sqlite3
 import time
+import uuid
 from datetime import datetime
 from enum import IntEnum
 from uuid import UUID
@@ -23,9 +24,9 @@ RANKED_HOST = "https://mcsrranked.com/api"  # 30 seconds cache
 # season 10 min id - 4547099, fetched max id - 9676810
 # season 11 min id - 9676905, fetched max id - 12897285
 # season 12 min id - 12897439, fetched max id - ...
-FETCH_MATCHES_FROM_ID = 0
-FETCH_MATCHES_SEASON = 12
-FETCH_MATCHES_WAIT_FOR_NEW = True
+FETCH_MATCHES_FROM_ID = 100876
+FETCH_MATCHES_SEASON = 1
+FETCH_MATCHES_WAIT_FOR_NEW = False
 
 REQ_SINCE_LAST_RATE_LIMIT = 0
 
@@ -122,8 +123,8 @@ def _process_response(player: str | None, resp: niquests.Response) -> dict:
 def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int, before_id: int) -> int:
     global REQ_SINCE_LAST_RATE_LIMIT
 
-    insert_matches = []
-    insert_matches_players = []
+    insert_matches: list[tuple[int, int, datetime, UUID | None]] = []
+    insert_matches_players: list[tuple[UUID, int]] = []
     max_id = after_id
 
     while True:
@@ -151,9 +152,9 @@ def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int
         for match in matches.root:
             min_id = min(min_id, match.id)
             max_id = max(max_id, match.id)
-            insert_matches.append((match.id, match.season, match.date))
+            insert_matches.append((match.id, match.season, match.date, match.result.uuid))
             for match_player in match.players:
-                insert_matches_players.append((match.id, match_player.nickname.lower()))
+                insert_matches_players.append((match_player.uuid, match.id))
 
         if before_id - after_id > 100 and len(matches.root) == 100 and min_id > after_id:
             logger.warning(
@@ -165,12 +166,12 @@ def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int
         break
 
     cur = db.executemany(
-        "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`) VALUES (?, ?, ?);",
+        "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`, `winner`) VALUES (?, ?, ?, ?);",
         insert_matches,
     )
     matches_cnt = cur.rowcount
     cur = db.executemany(
-        "INSERT OR IGNORE INTO `match_player` (`match_id`, `player_nickname`) VALUES (?, ?);",
+        "INSERT OR IGNORE INTO `match_player` (`player_id`, `match_id`) VALUES (?, ?);",
         insert_matches_players,
     )
     logger.debug(f"Inserted {matches_cnt} matches and {cur.rowcount} matches-players")
@@ -203,37 +204,56 @@ def fetch_matches_from_id(db: sqlite3.Connection, from_id: int, season: int) -> 
         from_id = new_from_id
 
 
+def refetch_from_file(db: sqlite3.Connection, season: int, filename: str) -> None:
+    batch_size = 99
+
+    with open(filename, encoding="utf-8") as f:
+        ids = list(set(map(int, map(str.strip, f))))
+
+    if not ids:
+        return
+
+    ids.sort()
+    fetched = 0
+
+    for offset in range(0, len(ids), batch_size):
+        batch = ids[offset: offset + batch_size]
+        fetch_matches_between_ids(db, season, batch[0] - 1, batch[-1] + 1)
+        fetched += len(batch)
+        logger.info(
+            f"Processed batch of {len(batch)} IDs ({batch[-1] - batch[0] + 1}), "
+            f"from {batch[0]} to {batch[-1]}: {fetched}/{len(ids)}, {fetched / len(ids) * 100:.2f}%"
+        )
+
+
 def main() -> None:
-    db = sqlite3.connect("matches_mcsr-ranked.db")
+    sqlite3.register_adapter(uuid.UUID, str)
+    db = sqlite3.connect("matches_mcsr-ranked-new.db")
     db.executescript("""
-    BEGIN;
     CREATE TABLE IF NOT EXISTS `player` (
-        `nickname` VARCHAR(32) NOT NULL,
-        `season` INT NOT NULL,
-        `min_match_id` BIGINT DEFAULT NULL,
-        `max_match_id` BIGINT DEFAULT NULL,
-        `season_fetched` BOOL NOT NULL DEFAULT FALSE,
-        PRIMARY KEY (`nickname`, `season`)
+        `id` UUID NOT NULL PRIMARY KEY ,
+        `nickname` VARCHAR(32) NOT NULL
     );
     CREATE TABLE IF NOT EXISTS `match` (
         `id` BIGINT PRIMARY KEY NOT NULL,
         `season` INT NOT NULL,
-        `date` DATETIME NOT NULL
+        `date` DATETIME NOT NULL,
+        `winner` UUID DEFAULT NULL,
+        FOREIGN KEY (`winner`) REFERENCES `player`(`id`)
     );
     CREATE TABLE IF NOT EXISTS `match_player` (
+        `player_id` UUID NOT NULL,
         `match_id` BIGINT NOT NULL,
-        `player_nickname` VARCHAR(32) NOT NULL,
-        PRIMARY KEY (`match_id`, `player_nickname`),
+        PRIMARY KEY (`player_id`, `match_id`),
+        FOREIGN KEY (`player_id`) REFERENCES `player`(`id`),
         FOREIGN KEY (`match_id`) REFERENCES `match`(`id`)
     );
-    CREATE INDEX IF NOT EXISTS `idx_match_player_nickname` ON `match_player`(`player_nickname`);
-    DROP INDEX IF EXISTS `idx_match_players`;
-    DROP TABLE IF EXISTS `match_fts`;
+    CREATE INDEX IF NOT EXISTS `idx_player_nickname` ON `player`(`nickname`);
     CREATE INDEX IF NOT EXISTS `idx_match_season_id` ON `match`(`season`, `id`);
-    COMMIT;
     """)
 
-    fetch_matches_from_id(db, FETCH_MATCHES_FROM_ID, FETCH_MATCHES_SEASON)
+    # fetch_matches_from_id(db, FETCH_MATCHES_FROM_ID, FETCH_MATCHES_SEASON)
+    refetch_from_file(db, 1, "match_ids_1.txt")
 
     db.close()
 
