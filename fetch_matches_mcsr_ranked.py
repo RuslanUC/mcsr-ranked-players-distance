@@ -1,3 +1,4 @@
+import bisect
 import sqlite3
 import time
 import uuid
@@ -24,9 +25,9 @@ RANKED_HOST = "https://mcsrranked.com/api"  # 30 seconds cache
 # season 10 min id - 4547099, fetched max id - 9676810
 # season 11 min id - 9676905, fetched max id - 12897285
 # season 12 min id - 12897439, fetched max id - ...
-FETCH_MATCHES_FROM_ID = 100876
-FETCH_MATCHES_SEASON = 1
-FETCH_MATCHES_WAIT_FOR_NEW = False
+FETCH_MATCHES_FROM_ID = 0
+FETCH_MATCHES_SEASON = 12
+FETCH_MATCHES_WAIT_FOR_NEW = True
 
 REQ_SINCE_LAST_RATE_LIMIT = 0
 
@@ -124,6 +125,7 @@ def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int
     global REQ_SINCE_LAST_RATE_LIMIT
 
     insert_matches: list[tuple[int, int, datetime, UUID | None]] = []
+    insert_players: dict[UUID, str] = {}
     insert_matches_players: list[tuple[UUID, int]] = []
     max_id = after_id
 
@@ -155,6 +157,7 @@ def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int
             insert_matches.append((match.id, match.season, match.date, match.result.uuid))
             for match_player in match.players:
                 insert_matches_players.append((match_player.uuid, match.id))
+                insert_players[match_player.uuid] = match_player.nickname
 
         if before_id - after_id > 100 and len(matches.root) == 100 and min_id > after_id:
             logger.warning(
@@ -164,6 +167,11 @@ def fetch_matches_between_ids(db: sqlite3.Connection, season: int, after_id: int
             fetch_matches_between_ids(db, season, after_id, min_id)
 
         break
+
+    db.executemany(
+        "INSERT OR REPLACE INTO `player` (`id`, `nickname`) VALUES (?, ?);",
+        list(insert_players.items()),
+    )
 
     cur = db.executemany(
         "INSERT OR IGNORE INTO `match` (`id`, `season`, `date`, `winner`) VALUES (?, ?, ?, ?);",
@@ -216,6 +224,9 @@ def refetch_from_file(db: sqlite3.Connection, season: int, filename: str) -> Non
     ids.sort()
     fetched = 0
 
+    skip_idx = bisect.bisect_left(ids, 13359840)
+    ids = ids[skip_idx:]
+
     for offset in range(0, len(ids), batch_size):
         batch = ids[offset: offset + batch_size]
         fetch_matches_between_ids(db, season, batch[0] - 1, batch[-1] + 1)
@@ -252,8 +263,8 @@ def main() -> None:
     CREATE INDEX IF NOT EXISTS `idx_match_season_id` ON `match`(`season`, `id`);
     """)
 
-    # fetch_matches_from_id(db, FETCH_MATCHES_FROM_ID, FETCH_MATCHES_SEASON)
-    refetch_from_file(db, 1, "match_ids_1.txt")
+    fetch_matches_from_id(db, FETCH_MATCHES_FROM_ID, FETCH_MATCHES_SEASON)
+    # refetch_from_file(db, 12, "match_ids_12.txt")
 
     db.close()
 
