@@ -16,10 +16,12 @@ def main() -> None:
     print("Selecting matches...")
     with sqlite3.connect(f"matches_{app_type}.db") as db:
         cur = db.execute("""
-        SELECT mp1.match_id, m.season, mp1.player_nickname, mp2.player_nickname
+        SELECT mp1.match_id, m.season, p1.nickname, p2.nickname
         FROM `match_player` mp1
-            INNER JOIN `match_player` mp2 on mp2.match_id = mp1.match_id AND mp1.player_nickname < mp2.player_nickname
-            INNER JOIN `match` m ON mp1.match_id = m.id;
+            INNER JOIN `match_player` mp2 on mp2.match_id = mp1.match_id AND mp1.player_id < mp2.player_id
+            INNER JOIN `match` m ON mp1.match_id = m.id
+            INNER JOIN `player` p1 ON mp1.player_id = p1.id
+            INNER JOIN `player` p2 ON mp2.player_id = p2.id;
         """)
 
         for match_id, season, player1, player2 in tqdm(cur, desc="Adding matches to the graph"):

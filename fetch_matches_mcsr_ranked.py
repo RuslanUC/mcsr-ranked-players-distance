@@ -212,34 +212,9 @@ def fetch_matches_from_id(db: sqlite3.Connection, from_id: int, season: int) -> 
         from_id = new_from_id
 
 
-def refetch_from_file(db: sqlite3.Connection, season: int, filename: str) -> None:
-    batch_size = 99
-
-    with open(filename, encoding="utf-8") as f:
-        ids = list(set(map(int, map(str.strip, f))))
-
-    if not ids:
-        return
-
-    ids.sort()
-    fetched = 0
-
-    skip_idx = bisect.bisect_left(ids, 13359840)
-    ids = ids[skip_idx:]
-
-    for offset in range(0, len(ids), batch_size):
-        batch = ids[offset: offset + batch_size]
-        fetch_matches_between_ids(db, season, batch[0] - 1, batch[-1] + 1)
-        fetched += len(batch)
-        logger.info(
-            f"Processed batch of {len(batch)} IDs ({batch[-1] - batch[0] + 1}), "
-            f"from {batch[0]} to {batch[-1]}: {fetched}/{len(ids)}, {fetched / len(ids) * 100:.2f}%"
-        )
-
-
 def main() -> None:
     sqlite3.register_adapter(uuid.UUID, str)
-    db = sqlite3.connect("matches_mcsr-ranked-new.db")
+    db = sqlite3.connect("matches_mcsr-ranked.db")
     db.executescript("""
     CREATE TABLE IF NOT EXISTS `player` (
         `id` UUID NOT NULL PRIMARY KEY ,
